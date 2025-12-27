@@ -1,0 +1,1565 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Visor BBDDINS – Plantillas por categoría/formulario o TAG</title>
+<!-- :contentReference[oaicite:0]{index=0} -->
+<style>
+  :root{
+    --page-bg:#ffffff;
+    --border:#000000;
+    --header-bg:#ffffff;
+    --header-text:#000000;
+    --section-bg:#e6e6e6;
+    --section-text:#000000;
+    --body-text:#000000;
+
+    /* Win95-ish */
+    --w95-bg:#c0c0c0;
+    --w95-light:#ffffff;
+    --w95-dark:#808080;
+    --w95-shadow:#404040;
+    --w95-blue:#000080;
+    --w95-hilite:#dfdfdf;
+  }
+
+  @page{ size:A4; margin:0; }
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family: "MS Sans Serif", Tahoma, Arial, Helvetica, sans-serif;
+    background: var(--w95-bg);
+    color: var(--body-text);
+  }
+
+  /* Topbar */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    background: var(--w95-bg);
+    padding:6px 8px 8px;
+    border-top:2px solid var(--w95-light);
+    border-left:2px solid var(--w95-light);
+    border-right:2px solid var(--w95-shadow);
+    border-bottom:2px solid var(--w95-shadow);
+  }
+  .topbar::before{
+    content:"Visor BBDDINS (plantillas por categoría/formulario o TAG)";
+    display:block;
+    background: var(--w95-blue);
+    color:#fff;
+    font-weight:800;
+    font-size:12px;
+    letter-spacing:.2px;
+    padding:4px 6px;
+    margin:-6px -8px 8px -8px;
+    border-bottom:1px solid #000;
+  }
+  .topbar .row{
+    max-width:1200px;
+    margin:0 auto;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+
+    background: var(--w95-bg);
+    padding:8px;
+    border-top:2px solid var(--w95-light);
+    border-left:2px solid var(--w95-light);
+    border-right:2px solid var(--w95-shadow);
+    border-bottom:2px solid var(--w95-shadow);
+  }
+  .group{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+
+  .topbar button,
+  .topbar select,
+  .topbar input[type="text"],
+  .panel button,
+  .panel select,
+  .panel input[type="text"],
+  .panel input[type="date"]{
+    border-top:2px solid var(--w95-light);
+    border-left:2px solid var(--w95-light);
+    border-right:2px solid var(--w95-shadow);
+    border-bottom:2px solid var(--w95-shadow);
+    background: var(--w95-bg);
+    padding:6px 10px;
+    font-weight:800;
+    cursor:pointer;
+    font-size:12px;
+    font-family: inherit;
+    color:#000; /* asegurar texto negro (ej. botón Importar JSON) */
+  }
+  .topbar button:active,
+  .panel button:active{
+    border-top:2px solid var(--w95-shadow);
+    border-left:2px solid var(--w95-shadow);
+    border-right:2px solid var(--w95-light);
+    border-bottom:2px solid var(--w95-light);
+  }
+  .topbar input[type="text"], .panel input[type="text"], .panel input[type="date"]{
+    cursor:text;
+    font-weight:700;
+  }
+  .topbar button.primary, .panel button.primary{ background: var(--w95-hilite); }
+  .topbar button.danger, .panel button.danger{ background:#ffd6d6; }
+  .topbar button:disabled, .panel button:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .workspace{
+    max-width:1200px;
+    margin:12px auto;
+    display:grid;
+    grid-template-columns: 420px 1fr;
+    gap:12px;
+    padding:0 10px 20px;
+  }
+
+  /* Left panel */
+  .panel{
+    background: var(--w95-bg);
+    border-top:2px solid var(--w95-light);
+    border-left:2px solid var(--w95-light);
+    border-right:2px solid var(--w95-shadow);
+    border-bottom:2px solid var(--w95-shadow);
+    padding:10px;
+  }
+  .panel h3{
+    margin:0 0 8px 0;
+    font-size:12px;
+    font-weight:900;
+    background: var(--w95-blue);
+    color:#fff;
+    padding:4px 6px;
+    border:1px solid #000;
+  }
+  .box{
+    border-top:2px solid var(--w95-shadow);
+    border-left:2px solid var(--w95-shadow);
+    border-right:2px solid var(--w95-light);
+    border-bottom:2px solid var(--w95-light);
+    padding:10px;
+    background: var(--w95-bg);
+    margin-bottom:12px;
+  }
+  .box h4{
+    margin:0 0 10px 0;
+    font-size:12px;
+    font-weight:900;
+    color:#000;
+  }
+  .grid2{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+  }
+  .full{ grid-column: 1 / -1; }
+  label{
+    font-size:11px;
+    font-weight:900;
+    display:block;
+    margin-bottom:6px;
+  }
+  .meta{
+    margin-top:8px;
+    font-size:11px;
+    color:#000;
+    line-height:1.35;
+    border:1px solid #000;
+    padding:8px 10px;
+    background:#ffffe1;
+    box-shadow: inset 1px 1px 0 #fff;
+  }
+
+  .tagResults{
+    margin-top:8px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .tagBtn{
+    border:1px solid #000;
+    background:#fff;
+    padding:4px 8px;
+    font-weight:900;
+    cursor:pointer;
+    font-size:12px;
+  }
+  .tagBtn.active{
+    outline:2px solid #000;
+    background:#e8f0ff;
+  }
+  .tmplList{
+    margin-top:8px;
+    border:1px solid #000;
+    background:#fff;
+    max-height:220px;
+    overflow:auto;
+  }
+  .tmplItem{
+    padding:8px 10px;
+    border-bottom:1px solid #000;
+    cursor:pointer;
+    font-weight:900;
+    font-size:12px;
+    line-height:1.2;
+  }
+  .tmplItem small{
+    display:block;
+    font-weight:800;
+    opacity:.85;
+    margin-top:3px;
+  }
+  .tmplItem:hover{ background:#f2f2f2; }
+  .tmplItem.active{ background:#dfe8ff; }
+
+  /* A4 page */
+  .page{
+    width:210mm;
+    min-height:297mm;
+    margin:0 auto 14px auto;
+    background: var(--page-bg);
+    padding:10mm;
+    border-top:2px solid var(--w95-light);
+    border-left:2px solid var(--w95-light);
+    border-right:2px solid var(--w95-shadow);
+    border-bottom:2px solid var(--w95-shadow);
+    box-shadow: inset 1px 1px 0 #fff, 0 6px 18px rgba(0,0,0,.12);
+    box-sizing:border-box;
+  }
+
+  body.exporting{
+    background:#fff !important;
+  }
+  body.exporting .page{
+    margin:0 !important;
+    box-shadow:none !important;
+    border:none !important;
+  }
+  body.exporting .uiOnly{
+    display:none !important;
+  }
+
+  /* ===== Documento (estructura fija) ===== */
+  .doc-header{
+    border:2px solid var(--border);
+    background: var(--header-bg);
+    color: var(--header-text);
+    padding:10px;
+    margin-bottom:12px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    break-inside:avoid;
+    page-break-inside:avoid;
+  }
+  .logo{
+    width:190px;
+    height:140px;
+    border:2px solid var(--border);
+    background:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    flex: 0 0 auto;
+  }
+  .logo img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    display:block;
+  }
+  .header-text{
+    flex:1 1 auto;
+    min-width:0;
+  }
+  .header-title{
+    font-size:18px;
+    font-weight:900;
+    margin:0 0 4px 0;
+    line-height:1.15;
+    word-break:break-word;
+  }
+  .header-subtitle{
+    font-size:12px;
+    font-weight:800;
+    margin:0;
+    opacity:.95;
+    word-break:break-word;
+  }
+  .header-meta{
+    flex: 0 0 auto;
+    text-align:right;
+    min-width:190px;
+    font-size:11px;
+    font-weight:900;
+    line-height:1.2;
+    word-break:break-word;
+  }
+  .header-meta .muted{
+    opacity:.85;
+    font-weight:800;
+  }
+
+  .field{
+    border:2px solid var(--border);
+    margin-bottom:12px;
+    background:#fff;
+    break-inside:avoid;
+    page-break-inside:avoid;
+  }
+  .field-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    padding:6px;
+    background: var(--section-bg);
+    color: var(--section-text);
+    border-bottom:2px solid var(--border);
+  }
+  .title{
+    font-weight:900;
+    font-size:14px;
+    word-break:break-word;
+    flex:1 1 auto;
+    min-width:0;
+  }
+  .field-body{ padding:8px; }
+
+  .textline input[type="text"]{
+    width:100%;
+    border:2px solid var(--border);
+    padding:8px;
+    font-size:14px;
+    font-weight:500;
+    box-sizing:border-box;
+    color: var(--body-text);
+    background:#fff;
+    cursor:text;
+  }
+  textarea{
+    width:100%;
+    min-height:70px;
+    resize:none;
+    border:2px solid var(--border);
+    padding:8px;
+    font-size:14px;
+    line-height:1.25;
+    overflow:hidden;
+    box-sizing:border-box;
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--body-text);
+    background:#fff;
+    cursor:text;
+  }
+  .opts{
+    display:flex;
+    flex-wrap:wrap;
+    gap:20px;
+    margin-bottom:8px;
+    font-size:16px;
+    color: var(--body-text);
+  }
+  .opts label{ white-space:nowrap; font-weight:800; }
+
+  .photos{
+    display:grid;
+    grid-template-columns:repeat(4, 160px);
+    gap:10px;
+    margin-top:10px;
+  }
+  .photos img{
+    width:160px;
+    height:200px;
+    object-fit:contain;
+    border:2px solid var(--border);
+    background:#fff;
+    display:block;
+  }
+  .photoTools{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:8px;
+  }
+  .miniBtn{
+    border:1px solid var(--border);
+    background:#fff;
+    padding:4px 8px;
+    font-weight:900;
+    cursor:pointer;
+    font-size:12px;
+    color:#000;
+  }
+
+  @media print{
+    .topbar,.panel{display:none !important;}
+    .workspace{display:block; padding:0;}
+    .page{margin:0; border:none; box-shadow:none;}
+    body{background:#fff;}
+    .uiOnly{display:none !important;}
+  }
+  @media (max-width:1100px){
+    .workspace{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+
+<body>
+
+<div class="topbar uiOnly">
+  <div class="row">
+    <div class="group">
+      <button class="primary" type="button" onclick="importJsonFiles()">Importar JSON(s)</button>
+      <button type="button" class="danger" onclick="clearLoaded()">Vaciar lista</button>
+    </div>
+
+    <div class="group">
+      <button class="primary" type="button" onclick="exportPDFAndJSON()">Guardar (PDF + JSON)</button>
+    </div>
+  </div>
+</div>
+
+<div class="workspace">
+  <div class="panel uiOnly">
+    <h3>Plantillas</h3>
+
+    <div class="box">
+      <h4>Abrir por categoría / formulario</h4>
+      <div class="grid2">
+        <div class="full">
+          <label>Categoría</label>
+          <select id="selCategory" onchange="onCategoryChange()">
+            <option value="">—</option>
+          </select>
+        </div>
+        <div class="full">
+          <label>Formulario</label>
+          <select id="selForm" onchange="onFormChange()">
+            <option value="">—</option>
+          </select>
+        </div>
+      </div>
+      <div class="meta" id="dbMeta">
+        Importa uno o varios JSON guardados. Luego abre por categoría/formulario o busca por TAG.
+      </div>
+    </div>
+
+    <div class="box">
+      <h4>Abrir por TAG</h4>
+      <div class="grid2">
+        <div class="full">
+          <label>Buscar TAG</label>
+          <input id="tagSearch" type="text" placeholder="Escribe para filtrar tags…" oninput="renderTagButtons()" />
+          <div class="tagResults" id="tagButtons"></div>
+        </div>
+        <div class="full">
+          <label>Plantillas encontradas</label>
+          <div class="tmplList" id="tagTemplateList" aria-label="Resultados por tag"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h4>Formulario cargado</h4>
+      <div class="meta" id="formMeta">No hay formulario cargado.</div>
+    </div>
+
+  </div>
+
+  <div>
+    <div id="capture" class="page">
+      <div id="docHeader" class="doc-header">
+        <div class="logo" id="logoBox"></div>
+        <div class="header-text">
+          <div id="docTitle" class="header-title"></div>
+          <div id="docSubtitle" class="header-subtitle"></div>
+        </div>
+        <div class="header-meta">
+          <div class="muted">Última edición</div>
+          <div id="lastEdited">—</div>
+        </div>
+      </div>
+      <div id="fieldsMount"></div>
+    </div>
+  </div>
+</div>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<script>
+  /* =========================
+     CONFIG
+  ========================= */
+  const FIXED_LOGO_URL = 'https://i.ibb.co/BK6jvxPG/image.png';
+
+  /* =========================
+     STATE
+  ========================= */
+  // Template DB in memory:
+  // { id, category, form, tags:[], sourceFileName, baseData, data }
+  const db = [];
+  let currentId = null;
+  let lastEditedISO = null;
+
+  // TAG UI state
+  let activeTag = '';
+
+  // Sesión de inspección actual (eventos ordenados)
+  // { id, templateId, category, form, tags:[], startedAtISO, openedAtISO, lastEditedISO, events:[{tISO,type,detail}] }
+  let currentInspection = null;
+  let lastEditEventAt = 0;
+
+  /* =========================
+     HELPERS
+  ========================= */
+  function escapeHTML(str){
+    return String(str ?? '').replace(/[&<>"']/g, m=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[m]));
+  }
+  function escapeAttr(str){
+    return escapeHTML(str).replace(/"/g,'&quot;');
+  }
+  function safeJSONParse(txt){
+    try{ return JSON.parse(txt); }catch(e){ return null; }
+  }
+  function normalize(s){ return String(s ?? '').trim(); }
+  function nowISO(){ return new Date().toISOString(); }
+  function fmtLastEdited(iso){
+    if(!iso) return '—';
+    try{ return new Date(iso).toLocaleString('es-ES'); }catch(e){ return String(iso); }
+  }
+  function updateLastEditedUI(){
+    document.getElementById('lastEdited').textContent = fmtLastEdited(lastEditedISO);
+  }
+
+  function makeId(){
+    if(window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'id_' + Math.random().toString(16).slice(2) + '_' + Date.now().toString(16);
+  }
+
+  function applyFixedLogo(){
+    const logoBox = document.getElementById('logoBox');
+    if(!logoBox) return;
+    logoBox.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = FIXED_LOGO_URL;
+    img.alt = 'Logo';
+    logoBox.appendChild(img);
+    logoBox.dataset.logo = FIXED_LOGO_URL;
+  }
+
+  function autoGrow(t){
+    t.style.height = 'auto';
+    t.style.height = (t.scrollHeight + 2) + 'px';
+  }
+  function refreshAutoGrow(){
+    document.querySelectorAll('textarea.autogrow').forEach(autoGrow);
+  }
+  document.addEventListener('input', (e)=>{
+    if(e.target && e.target.matches('textarea.autogrow')) autoGrow(e.target);
+  });
+
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function exportStamp(d=new Date()){
+    const y = d.getFullYear();
+    const m = pad2(d.getMonth()+1);
+    const da = pad2(d.getDate());
+    const h = pad2(d.getHours());
+    const mi = pad2(d.getMinutes());
+    const s = pad2(d.getSeconds());
+    return `${y}${m}${da}_${h}${mi}${s}`;
+  }
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+  async function writeFileToDir(dirHandle, filename, blob){
+    const fileHandle = await dirHandle.getFileHandle(filename, { create:true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  }
+  async function savePdfAndJsonTogether({pdfBlob, jsonBlob, pdfName, jsonName}){
+    if('showDirectoryPicker' in window){
+      try{
+        const dirHandle = await window.showDirectoryPicker({ mode:'readwrite' });
+        await writeFileToDir(dirHandle, pdfName, pdfBlob);
+        await writeFileToDir(dirHandle, jsonName, jsonBlob);
+        return;
+      }catch(e){}
+    }
+    downloadBlob(pdfBlob, pdfName);
+    setTimeout(()=>downloadBlob(jsonBlob, jsonName), 250);
+  }
+
+  function touchEdited(detail='Edición del formulario'){
+    lastEditedISO = nowISO();
+    updateLastEditedUI();
+    const item = getCurrentItem();
+    if(item && item.data){
+      item.data.header = item.data.header || {};
+      item.data.header.lastEdited = lastEditedISO;
+    }
+
+    // registrar evento de edición (limitado para no saturar)
+    const nowMs = Date.now();
+    if(nowMs - lastEditEventAt > 5000){
+      lastEditEventAt = nowMs;
+      try{ logInspectionEvent('edit', detail); }catch(e){}
+    }
+
+    updateFormMeta();
+  }
+
+  function deepClone(obj){
+    try{ return structuredClone(obj); }catch(e){ return JSON.parse(JSON.stringify(obj)); }
+  }
+
+  function newInspectionForItem(item, reason='open'){
+    if(!item) return null;
+    const id = makeId();
+    const startedAtISO = nowISO();
+    return {
+      id,
+      templateId: item.id || '',
+      category: item.category || '',
+      form: item.form || '',
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      startedAtISO,
+      openedAtISO: startedAtISO,
+      lastEditedISO: startedAtISO,
+      events: [
+        { tISO: startedAtISO, type:'start', detail:`Inspección iniciada (${reason}).` }
+      ]
+    };
+  }
+
+  function ensureCurrentInspection(reason='auto'){
+    const item = getCurrentItem();
+    if(!item) return null;
+
+    // si no existe o es de otra plantilla, crear nueva inspección
+    if(!currentInspection || currentInspection.templateId !== item.id){
+      currentInspection = newInspectionForItem(item, reason);
+      lastEditEventAt = 0;
+    }else{
+      // actualizar metadatos (por si cambian tags etc.)
+      currentInspection.category = item.category || currentInspection.category;
+      currentInspection.form = item.form || currentInspection.form;
+      currentInspection.tags = Array.isArray(item.tags) ? item.tags : currentInspection.tags;
+    }
+    return currentInspection;
+  }
+
+  function logInspectionEvent(type, detail){
+    const ins = ensureCurrentInspection('auto');
+    if(!ins) return;
+    const tISO = nowISO();
+    ins.lastEditedISO = tISO;
+    ins.events = Array.isArray(ins.events) ? ins.events : [];
+    ins.events.push({ tISO, type: String(type||'event'), detail: String(detail||'') });
+    // mantener orden por fecha (por seguridad)
+    ins.events.sort((a,b)=>String(a.tISO).localeCompare(String(b.tISO)));
+  }
+
+  /* =========================
+     DB / UI LISTS
+  ========================= */
+  function getCurrentItem(){
+    if(!currentId) return null;
+    return db.find(x=>x.id===currentId) || null;
+  }
+
+  function listCategories(){
+    const set = new Set();
+    db.forEach(x=>{
+      const c = normalize(x.category);
+      if(c) set.add(c);
+    });
+    return [...set].sort((a,b)=>a.localeCompare(b,'es'));
+  }
+  function listFormsByCategory(cat){
+    const c = normalize(cat);
+    return db
+      .filter(x=>normalize(x.category)===c)
+      .sort((a,b)=>normalize(a.form).localeCompare(normalize(b.form),'es'));
+  }
+
+  function listUniqueTags(){
+    const set = new Set();
+    db.forEach(t=>{
+      (Array.isArray(t.tags) ? t.tags : []).forEach(tag=>{
+        const n = normalize(tag);
+        if(n) set.add(n);
+      });
+    });
+    return [...set].sort((a,b)=>a.localeCompare(b,'es'));
+  }
+
+  function refreshSelectors(keep=true){
+    const selCat = document.getElementById('selCategory');
+    const selForm = document.getElementById('selForm');
+
+    const prevCat = keep ? (selCat.value || '') : '';
+    const prevForm = keep ? (selForm.value || '') : '';
+
+    const cats = listCategories();
+
+    selCat.innerHTML = '';
+    if(cats.length === 0){
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = '— Sin datos —';
+      selCat.appendChild(o);
+    }else{
+      const o0 = document.createElement('option');
+      o0.value = '';
+      o0.textContent = '— Selecciona —';
+      selCat.appendChild(o0);
+
+      cats.forEach(c=>{
+        const o = document.createElement('option');
+        o.value = c;
+        o.textContent = c;
+        selCat.appendChild(o);
+      });
+
+      if(prevCat && cats.includes(prevCat)) selCat.value = prevCat;
+    }
+
+    const chosenCat = selCat.value || '';
+    const forms = chosenCat ? listFormsByCategory(chosenCat) : [];
+
+    selForm.innerHTML = '';
+    if(!chosenCat){
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = '— Selecciona categoría —';
+      selForm.appendChild(o);
+    }else if(forms.length === 0){
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = '— Sin formularios —';
+      selForm.appendChild(o);
+    }else{
+      const o0 = document.createElement('option');
+      o0.value = '';
+      o0.textContent = '— Selecciona —';
+      selForm.appendChild(o0);
+
+      forms.forEach(f=>{
+        const o = document.createElement('option');
+        o.value = f.id;
+        o.textContent = f.form;
+        selForm.appendChild(o);
+      });
+
+      if(prevForm && forms.some(x=>x.id===prevForm)) selForm.value = prevForm;
+    }
+
+    updateDbMeta();
+    renderTagButtons();
+    renderTagTemplateList();
+  }
+
+  function updateDbMeta(){
+    const el = document.getElementById('dbMeta');
+    const count = db.length;
+    const cats = listCategories().length;
+    const tags = listUniqueTags().length;
+    el.innerHTML = `<b>Plantillas cargadas:</b> ${count}<br><b>Categorías:</b> ${cats}<br><b>TAGs:</b> ${tags}`;
+  }
+
+  function updateFormMeta(){
+    const el = document.getElementById('formMeta');
+    const item = getCurrentItem();
+    if(!item){
+      el.textContent = 'No hay formulario cargado.';
+      return;
+    }
+    const edited = lastEditedISO ? fmtLastEdited(lastEditedISO) : '—';
+    const tags = (Array.isArray(item.tags) && item.tags.length)
+      ? item.tags.map(t=>escapeHTML(t)).join(', ')
+      : '—';
+    const src = normalize(item.sourceFileName) ? `<br><b>Archivo:</b> ${escapeHTML(item.sourceFileName)}` : '';
+    el.innerHTML =
+      `<b>Cargado:</b> ${escapeHTML(item.category)} / ${escapeHTML(item.form)}`
+      + `<br><b>TAGs:</b> ${tags}`
+      + src
+      + `<br><b>Última edición:</b> ${escapeHTML(edited)}`;
+  }
+
+  function onCategoryChange(){
+    currentId = null;
+    activeTag = '';
+    refreshSelectors(true);
+    renderEmptyDocument();
+  }
+
+  function onFormChange(){
+    const id = document.getElementById('selForm').value || '';
+    if(!id){
+      currentId = null;
+      renderEmptyDocument();
+      return;
+    }
+    const item = db.find(x=>x.id===id);
+    if(!item || !item.data){
+      alert('Formulario no encontrado o inválido.');
+      currentId = null;
+      renderEmptyDocument();
+      return;
+    }
+    currentId = id;
+    activeTag = '';
+    highlightActiveTemplateInLists();
+    loadLayoutFromData(item.data);
+    ensureCurrentInspection('open');
+    logInspectionEvent('open', `Se abrió la plantilla: ${item.category} / ${item.form}`);
+    updateFormMeta();
+  }
+
+  function clearLoaded(){
+    const ok = confirm('Esto vacía la lista de plantillas importadas (no borra archivos del disco). ¿Continuar?');
+    if(!ok) return;
+    db.length = 0;
+    currentId = null;
+    activeTag = '';
+    refreshSelectors(false);
+    renderEmptyDocument();
+  }
+
+  /* =========================
+     TAG UI
+  ========================= */
+  function renderTagButtons(){
+    const wrap = document.getElementById('tagButtons');
+    const q = normalize(document.getElementById('tagSearch').value).toLowerCase();
+    const tags = listUniqueTags().filter(t => !q || t.toLowerCase().includes(q));
+
+    wrap.innerHTML = '';
+    if(tags.length === 0){
+      const span = document.createElement('span');
+      span.style.fontSize = '11px';
+      span.style.fontWeight = '900';
+      span.textContent = (db.length === 0) ? 'Importa JSON(s) para ver TAGs.' : 'No hay TAGs que coincidan.';
+      wrap.appendChild(span);
+      return;
+    }
+
+    // no renderizar miles
+    const limited = tags.slice(0, 100);
+
+    limited.forEach(t=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tagBtn' + (activeTag === t ? ' active' : '');
+      b.textContent = t;
+      b.onclick = ()=>{
+        activeTag = (activeTag === t) ? '' : t;
+        renderTagButtons();
+        renderTagTemplateList();
+        highlightActiveTemplateInLists();
+      };
+      wrap.appendChild(b);
+    });
+
+    if(tags.length > limited.length){
+      const more = document.createElement('span');
+      more.style.fontSize = '11px';
+      more.style.fontWeight = '900';
+      more.textContent = `(+${tags.length - limited.length} más)`;
+      wrap.appendChild(more);
+    }
+  }
+
+  function templatesForActiveTag(){
+    const tag = normalize(activeTag);
+    if(!tag) return [];
+    return db
+      .filter(t => Array.isArray(t.tags) && t.tags.some(x => normalize(x) === tag))
+      .sort((a,b)=>{
+        const ca = normalize(a.category).localeCompare(normalize(b.category),'es');
+        if(ca !== 0) return ca;
+        return normalize(a.form).localeCompare(normalize(b.form),'es');
+      });
+  }
+
+  function renderTagTemplateList(){
+    const list = document.getElementById('tagTemplateList');
+    const items = templatesForActiveTag();
+    list.innerHTML = '';
+
+    if(!activeTag){
+      list.innerHTML = '<div style="padding:10px;font-weight:900;font-size:12px">Selecciona un TAG para listar plantillas.</div>';
+      return;
+    }
+    if(items.length === 0){
+      list.innerHTML = '<div style="padding:10px;font-weight:900;font-size:12px">No hay plantillas con este TAG.</div>';
+      return;
+    }
+
+    items.forEach(t=>{
+      const div = document.createElement('div');
+      div.className = 'tmplItem' + (t.id === currentId ? ' active' : '');
+      div.innerHTML = `${escapeHTML(t.category)} / ${escapeHTML(t.form)}<small>TAG: ${escapeHTML(activeTag)}</small>`;
+      div.onclick = ()=>{
+        currentId = t.id;
+        // sincronizar selects
+        document.getElementById('selCategory').value = t.category;
+        refreshSelectors(true);
+        document.getElementById('selForm').value = t.id;
+        highlightActiveTemplateInLists();
+        loadLayoutFromData(t.data);
+        updateFormMeta();
+      };
+      list.appendChild(div);
+    });
+  }
+
+  function highlightActiveTemplateInLists(){
+    // resaltar en lista por TAG
+    document.querySelectorAll('#tagTemplateList .tmplItem').forEach(el=>{
+      el.classList.remove('active');
+    });
+    // resaltar en botones tags
+    document.querySelectorAll('#tagButtons .tagBtn').forEach(btn=>{
+      btn.classList.toggle('active', btn.textContent === activeTag);
+    });
+    // volver a pintar lista si hace falta
+    renderTagTemplateList();
+  }
+
+  /* =========================
+     IMPORT JSON(s)
+  =========================
+     Formatos soportados:
+     A) Plantilla única:
+        {
+          "meta": { "category":"...", "name":"...", "tags":["..."] }  // name=Formulario
+          "header": {...}, "theme": {...}, "fields":[...]
+        }
+
+     B) Bundle simple:
+        {
+          "templates":[
+            { "meta":{...}, "header":..., "theme":..., "fields":[...] },
+            ...
+          ]
+        }
+
+     C) Export de Formu (formu_export_v2):
+        {
+          "format":"formu_export_v2",
+          "exportedAt":"...",
+          "layout": { "header":..., "theme":..., "fields":[...] },
+          "templates":[
+            { "id":"...", "category":"...", "name":"...", "code":"TAG-opcional", "data":{ "header":..., "theme":..., "fields":[...] } },
+            ...
+          ]
+        }
+  ========================= */
+  function importJsonFiles(){
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'application/json';
+    inp.multiple = true;
+
+    function normalizeTags(tagsRaw){
+      if(Array.isArray(tagsRaw)){
+        return tagsRaw.map(x=>normalize(x)).filter(Boolean);
+      }
+      if(typeof tagsRaw === 'string'){
+        return tagsRaw.split(',').map(x=>normalize(x)).filter(Boolean);
+      }
+      return [];
+    }
+
+    function isFormuExportV2(obj){
+      return !!(obj && typeof obj === 'object' && obj.format === 'formu_export_v2' && (obj.layout || obj.templates));
+    }
+
+    function extractLayout(raw){
+      if(!raw || typeof raw !== 'object') return null;
+      if(raw.header && Array.isArray(raw.fields)) return raw;             // plantilla directa
+      if(raw.data && typeof raw.data === 'object' && raw.data.header && Array.isArray(raw.data.fields)) return raw.data; // Formu: {data:{...}}
+      if(raw.layout && typeof raw.layout === 'object' && raw.layout.header && Array.isArray(raw.layout.fields)) return raw.layout; // wrapper
+      return raw;
+    }
+
+    function normalizeImportedTemplate(raw, fallbackCategory='', fallbackForm=''){
+      if(!raw || typeof raw !== 'object') return null;
+
+      const layout = extractLayout(raw);
+      if(!layout || typeof layout !== 'object') return null;
+
+      // normalizar estructura mínima
+      layout.header = (layout.header && typeof layout.header==='object') ? layout.header : {};
+      layout.theme = (layout.theme && typeof layout.theme==='object') ? layout.theme : {};
+      layout.fields = Array.isArray(layout.fields) ? layout.fields : [];
+
+      const rawMeta = (raw.meta && typeof raw.meta === 'object') ? raw.meta : {};
+      const layoutMeta = (layout.meta && typeof layout.meta === 'object') ? layout.meta : {};
+
+      const category = normalize(raw.category || rawMeta.category || layoutMeta.category || fallbackCategory || '');
+      const form = normalize(raw.name || raw.form || rawMeta.name || rawMeta.form || layoutMeta.name || layoutMeta.form || fallbackForm || '');
+
+      if(!category || !form) return null;
+
+      // tags: meta.tags / tags / code (TAG de Formu)
+      const tagsRaw = (rawMeta.tags ?? rawMeta.tag ?? raw.tags ?? raw.tag ?? layoutMeta.tags ?? layoutMeta.tag ?? []);
+      let tags = normalizeTags(tagsRaw);
+
+      const code = normalize(raw.code || rawMeta.code || layoutMeta.code || '');
+      if(code && !tags.some(t=>normalize(t)===code)) tags.unshift(code);
+
+      // fuerza logo fijo
+      layout.header.logo = FIXED_LOGO_URL;
+
+      // fija meta normalizada (para exportación y UI)
+      layout.meta = Object.assign({}, layoutMeta, rawMeta, {
+        category,
+        name: form,
+        tags
+      });
+      if(code) layout.meta.code = code;
+
+      return { category, form, tags, data: layout };
+    }
+
+    inp.onchange = async ()=>{
+      const files = [...(inp.files || [])];
+      if(files.length === 0) return;
+
+      for(const file of files){
+        const text = await file.text();
+        const parsed = safeJSONParse(text);
+
+        if(!parsed || typeof parsed !== 'object'){
+          alert(`JSON inválido: ${file.name}`);
+          continue;
+        }
+
+        // Soporte directo para export de Formu (formu_export_v2):
+        // { format:"formu_export_v2", templates:[{category,name,code,data:{header,theme,fields}}], layout:{...} }
+        let rawTemplates = [];
+
+        if(isFormuExportV2(parsed)){
+          if(Array.isArray(parsed.templates) && parsed.templates.length){
+            rawTemplates = parsed.templates.slice();
+          }else if(parsed.layout && typeof parsed.layout === 'object'){
+            rawTemplates = [{
+              category: '(Importado)',
+              name: '(layout)',
+              code: '',
+              data: parsed.layout
+            }];
+          }
+        }else{
+          // Formato legacy / bundle simple
+          rawTemplates = Array.isArray(parsed.templates) ? parsed.templates : [parsed];
+        }
+
+        for(const rt of rawTemplates){
+          const norm = normalizeImportedTemplate(rt, '', '');
+          if(!norm){
+            alert(`Falta categoría o nombre de formulario en: ${file.name}
+
+Se omite esta plantilla.`);
+            continue;
+          }
+
+          const { category, form, tags, data } = norm;
+
+          const existing = db.find(x=>normalize(x.category)===normalize(category) && normalize(x.form)===normalize(form));
+          if(existing){
+            const ok = confirm(`Ya existe en memoria:
+${category} / ${form}
+
+¿Sobrescribir con ${file.name}?`);
+            if(!ok) continue;
+            existing.baseData = deepClone(data);
+            existing.data = deepClone(data);
+            existing.tags = tags;
+            existing.sourceFileName = file.name;
+          }else{
+            db.push({
+              id: makeId(),
+              category,
+              form,
+              tags,
+              sourceFileName: file.name,
+              baseData: deepClone(data),
+              data: deepClone(data)
+            });
+          }
+        }
+      }
+
+      // refrescar UI
+      refreshSelectors(true);
+      renderTagButtons();
+      renderTagTemplateList();
+
+      // Autocarga si solo hay 1
+      if(db.length === 1){
+        const only = db[0];
+        document.getElementById('selCategory').value = only.category;
+        refreshSelectors(true);
+        document.getElementById('selForm').value = only.id;
+        onFormChange();
+      }
+    };
+
+    inp.click();
+  }
+
+  /* =========================
+     RENDER / LOAD
+  ========================= */
+  function setVar(name, value){
+    if(!value) return;
+    document.documentElement.style.setProperty(name, value);
+  }
+
+  function renderEmptyDocument(){
+    lastEditedISO = nowISO();
+    updateLastEditedUI();
+    applyFixedLogo();
+
+    document.getElementById('docTitle').textContent = '—';
+    document.getElementById('docSubtitle').textContent = 'Importa JSON y abre una plantilla';
+
+    const mount = document.getElementById('fieldsMount');
+    mount.innerHTML = '';
+
+    updateFormMeta();
+  }
+
+  function fieldHTML(d, idx){
+    const type = normalize(d.type) || 'text';
+    const title = (d.title ?? '').toString();
+    const config = (d.config && typeof d.config==='object') ? d.config : {};
+
+    if(type === 'text'){
+      const v = (d.value ?? '').toString();
+      return `
+        <div class="field" data-type="text" data-idx="${idx}">
+          <div class="field-head">
+            <div class="title">${escapeHTML(title)}</div>
+          </div>
+          <div class="field-body textline">
+            <input type="text" value="${escapeAttr(v)}" oninput="onFieldChange(${idx})">
+          </div>
+        </div>
+      `;
+    }
+
+    if(type === 'radio'){
+      const options = Array.isArray(config.options) && config.options.length ? config.options : ["Bien","Mal","No dispone"];
+      const selected = (d.selected ?? '').toString();
+      const obs = (d.obs ?? '').toString();
+      const name = `r_${idx}`;
+      return `
+        <div class="field" data-type="radio" data-idx="${idx}">
+          <div class="field-head">
+            <div class="title">${escapeHTML(title)}</div>
+          </div>
+          <div class="field-body">
+            <div class="opts">
+              ${options.map(o=>{
+                const ck = (selected === o) ? 'checked' : '';
+                return `<label><input type="radio" name="${name}" value="${escapeAttr(o)}" ${ck} onchange="onFieldChange(${idx})"> ${escapeHTML(o)}</label>`;
+              }).join('')}
+            </div>
+            <textarea class="autogrow" placeholder="Observaciones" oninput="onFieldChange(${idx})">${escapeHTML(obs)}</textarea>
+          </div>
+        </div>
+      `;
+    }
+
+    if(type === 'photos'){
+      const images = Array.isArray(d.images) ? d.images : [];
+      return `
+        <div class="field" data-type="photos" data-idx="${idx}">
+          <div class="field-head">
+            <div class="title">${escapeHTML(title)}</div>
+          </div>
+          <div class="field-body">
+            <div class="photoTools uiOnly">
+              <input id="file_${idx}" type="file" accept="image/*" multiple onchange="addPhotos(${idx}, this.files)">
+              <button class="miniBtn danger" type="button" onclick="clearPhotos(${idx})">Vaciar imágenes</button>
+            </div>
+            <div class="photos" id="grid_${idx}">
+              ${images.map((src, j)=>`
+                <div>
+                  <img src="${escapeAttr(src)}" alt="img">
+                  <div class="photoTools uiOnly" style="margin-top:6px">
+                    <button class="miniBtn danger" type="button" onclick="removePhoto(${idx}, ${j})">Quitar</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // fallback
+    return `
+      <div class="field" data-type="${escapeAttr(type)}" data-idx="${idx}">
+        <div class="field-head"><div class="title">${escapeHTML(title)}</div></div>
+        <div class="field-body">
+          <div style="font-size:12px;font-weight:900">Tipo no soportado: ${escapeHTML(type)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function loadLayoutFromData(data){
+    if(!data || typeof data !== 'object'){
+      alert('Datos inválidos.');
+      return;
+    }
+
+    // theme
+    if(data.theme){
+      setVar('--border', data.theme.border || '#000000');
+      setVar('--header-bg', data.theme.headerBg || '#ffffff');
+      setVar('--header-text', data.theme.headerText || '#000000');
+      setVar('--section-bg', data.theme.sectionBg || '#e6e6e6');
+      setVar('--section-text', data.theme.sectionText || '#000000');
+      setVar('--page-bg', data.theme.pageBg || '#ffffff');
+    }
+
+    // header
+    const h = data.header && typeof data.header==='object' ? data.header : {};
+    const title = h.title || '';
+    const subtitle = h.subtitle || '';
+
+    lastEditedISO = h.lastEdited || nowISO();
+    updateLastEditedUI();
+    applyFixedLogo();
+
+    document.getElementById('docTitle').textContent = title;
+    document.getElementById('docSubtitle').textContent = subtitle;
+
+    // fields
+    const mount = document.getElementById('fieldsMount');
+    const fields = Array.isArray(data.fields) ? data.fields : [];
+    mount.innerHTML = fields.map((d,i)=>fieldHTML(d,i)).join('');
+
+    refreshAutoGrow();
+    updateFormMeta();
+  }
+
+  /* =========================
+     FILL HANDLERS (contenido)
+  ========================= */
+  function onFieldChange(idx){
+    const item = getCurrentItem();
+    if(!item || !item.data) return;
+
+    const fields = Array.isArray(item.data.fields) ? item.data.fields : [];
+    const f = fields[idx];
+    if(!f) return;
+
+    const fieldEl = document.querySelector(`.field[data-idx="${idx}"]`);
+    if(!fieldEl) return;
+
+    const type = fieldEl.getAttribute('data-type');
+
+    if(type === 'text'){
+      const v = fieldEl.querySelector('input[type="text"]')?.value ?? '';
+      f.value = v;
+    }
+
+    if(type === 'radio'){
+      const checked = fieldEl.querySelector('input[type="radio"]:checked');
+      f.selected = checked ? (checked.value || checked.parentElement.textContent.trim()) : '';
+      const obs = fieldEl.querySelector('textarea')?.value ?? '';
+      f.obs = obs;
+      // NO tocar config.options (plantilla)
+      f.config = (f.config && typeof f.config==='object') ? f.config : {};
+    }
+
+    touchEdited(`Campo actualizado: ${f.title || '—'}`);
+  }
+
+  async function fileToDataURL(file){
+    return new Promise((resolve, reject)=>{
+      const r = new FileReader();
+      r.onload = ()=>resolve(String(r.result || ''));
+      r.onerror = ()=>reject(new Error('No se pudo leer imagen'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function addPhotos(idx, fileList){
+    const item = getCurrentItem();
+    if(!item || !item.data) return;
+
+    const files = [...(fileList || [])];
+    if(files.length === 0) return;
+
+    const fields = Array.isArray(item.data.fields) ? item.data.fields : [];
+    const f = fields[idx];
+    if(!f) return;
+
+    f.images = Array.isArray(f.images) ? f.images : [];
+
+    for(const file of files){
+      try{
+        const url = await fileToDataURL(file);
+        if(url) f.images.push(url);
+      }catch(e){}
+    }
+
+    rerenderField(idx);
+    touchEdited(`Fotos añadidas: ${f.title || '—'}`);
+  }
+
+  function removePhoto(idx, j){
+    const item = getCurrentItem();
+    if(!item || !item.data) return;
+
+    const f = item.data.fields?.[idx];
+    if(!f || !Array.isArray(f.images)) return;
+
+    f.images.splice(j, 1);
+    rerenderField(idx);
+    touchEdited(`Foto eliminada: ${f.title || '—'}`);
+  }
+
+  function clearPhotos(idx){
+    const ok = confirm('¿Vaciar todas las imágenes de este bloque?');
+    if(!ok) return;
+
+    const item = getCurrentItem();
+    if(!item || !item.data) return;
+
+    const f = item.data.fields?.[idx];
+    if(!f) return;
+
+    f.images = [];
+    rerenderField(idx);
+    touchEdited(`Fotos vaciadas: ${f.title || '—'}`);
+  }
+
+  function rerenderField(idx){
+    const item = getCurrentItem();
+    if(!item || !item.data) return;
+
+    const f = item.data.fields?.[idx];
+    if(!f) return;
+
+    const old = document.querySelector(`.field[data-idx="${idx}"]`);
+    if(!old) return;
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = fieldHTML(f, idx).trim();
+    const neu = tmp.firstElementChild;
+
+    old.replaceWith(neu);
+    refreshAutoGrow();
+  }
+
+  /* =========================
+     SERIALIZE (para guardar)
+  ========================= */
+  function getTheme(){
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      border: styles.getPropertyValue('--border').trim() || '#000000',
+      headerBg: styles.getPropertyValue('--header-bg').trim() || '#ffffff',
+      headerText: styles.getPropertyValue('--header-text').trim() || '#000000',
+      sectionBg: styles.getPropertyValue('--section-bg').trim() || '#e6e6e6',
+      sectionText: styles.getPropertyValue('--section-text').trim() || '#000000',
+      pageBg: styles.getPropertyValue('--page-bg').trim() || '#ffffff'
+    };
+  }
+
+  function serializeCurrent(){
+    const item = getCurrentItem();
+    if(!item || !item.data){
+      return null;
+    }
+
+    // trabajar sobre el objeto (ya se va actualizando con los handlers)
+    const out = item.data;
+
+    out.header = out.header && typeof out.header==='object' ? out.header : {};
+    out.header.logo = FIXED_LOGO_URL;
+    out.header.lastEdited = lastEditedISO || nowISO();
+
+    out.theme = getTheme();
+
+    out.meta = out.meta && typeof out.meta==='object' ? out.meta : {};
+    out.meta.category = item.category;
+    out.meta.name = item.form;
+    out.meta.tags = Array.isArray(item.tags) ? item.tags : [];
+
+    out.fields = Array.isArray(out.fields) ? out.fields : [];
+
+    // inspección actual (eventos ordenados)
+    try{
+      const ins = ensureCurrentInspection('serialize');
+      if(ins){
+        out.meta.inspectionId = ins.id;
+        out.meta.inspectionStartedAtISO = ins.startedAtISO;
+        out.meta.inspectionOpenedAtISO = ins.openedAtISO;
+        out.meta.inspectionLastEditedAtISO = ins.lastEditedISO || (lastEditedISO || nowISO());
+        out.inspection = deepClone(ins);
+      }
+    }catch(e){}
+
+    return out;
+  }
+
+  /* =========================
+     EXPORT PDF + JSON
+  ========================= */
+  async function exportPDFAndJSON(){
+    const item = getCurrentItem();
+    if(!item){
+      alert('No hay formulario seleccionado.');
+      return;
+    }
+
+    refreshAutoGrow();
+    applyFixedLogo();
+
+    const data = serializeCurrent();
+    if(!data){
+      alert('No se pudo serializar el formulario.');
+      return;
+    }
+
+    const category = normalize(item.category) || 'Categoria';
+    const form = normalize(item.form) || 'Formulario';
+
+    const stamp = exportStamp(new Date());
+    const safeCat = category.replace(/[^\w\-ÁÉÍÓÚÜÑáéíóúüñ ]+/g,'').trim().replace(/\s+/g,'_') || 'Categoria';
+    const safeName = form.replace(/[^\w\-ÁÉÍÓÚÜÑáéíóúüñ ]+/g,'').trim().replace(/\s+/g,'_') || 'Formulario';
+
+    const pdfName = `informe_${safeCat}__${safeName}__${stamp}.pdf`;
+    const jsonName = `BBDDINS_${safeCat}__${safeName}__${stamp}.json`;
+
+    const jsonBlob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+
+    try{
+      const ins = ensureCurrentInspection('export');
+      if(ins){
+        logInspectionEvent('export', `Se exportó: ${pdfName} + ${jsonName}`);
+      }
+    }catch(e){}
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
+
+    const pageW = 210;
+    const pageH = 297;
+    const margin = 10;
+    const contentW = pageW - margin*2;
+    const contentH = pageH - margin*2;
+
+    document.body.classList.add('exporting');
+
+    async function renderEl(element){
+      return await html2canvas(element, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        onclone: (doc)=>{
+          const cap = doc.getElementById('capture');
+          if(cap){ cap.style.boxShadow = 'none'; cap.style.margin = '0'; }
+          doc.querySelectorAll('.uiOnly').forEach(a => a.style.display = 'none');
+        }
+      });
+    }
+
+    try{
+      const header = document.getElementById('docHeader');
+      const fields = [...document.querySelectorAll('#capture .field')];
+      const blocks = [header, ...fields];
+
+      let cursorY = margin;
+
+      for(const block of blocks){
+        const canvas = await renderEl(block);
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+        let blockWmm = contentW;
+        let blockHmm = (canvas.height * blockWmm) / canvas.width;
+
+        if(blockHmm > contentH){
+          const scaleFactor = contentH / blockHmm;
+          blockWmm = blockWmm * scaleFactor;
+          blockHmm = contentH;
+        }
+
+        if(cursorY + blockHmm > (pageH - margin)){
+          pdf.addPage();
+          cursorY = margin;
+        }
+
+        const x = margin + (contentW - blockWmm) / 2;
+        pdf.addImage(imgData, 'JPEG', x, cursorY, blockWmm, blockHmm);
+        cursorY += blockHmm + 2;
+      }
+
+      const pdfBlob = pdf.output('blob');
+      await savePdfAndJsonTogether({ pdfBlob, jsonBlob, pdfName, jsonName });
+
+    }finally{
+      document.body.classList.remove('exporting');
+    }
+
+    /* === Reinicio de plantilla tras guardar ===
+       Vuelve el formulario a su estado "vacío" (base) para comenzar una nueva inspección.
+    */
+    try{
+      if(item && item.baseData){
+        item.data = deepClone(item.baseData);
+        loadLayoutFromData(item.data);
+        // comenzar nueva sesión de inspección limpia
+        currentInspection = newInspectionForItem(item, 'resetAfterExport');
+        updateFormMeta();
+      }
+    }catch(e){}
+  }
+
+  /* =========================
+     INIT
+  ========================= */
+  (function init(){
+    lastEditedISO = nowISO();
+    updateLastEditedUI();
+    applyFixedLogo();
+
+    document.getElementById('docTitle').textContent = '—';
+    document.getElementById('docSubtitle').textContent = 'Importa JSON y abre una plantilla';
+
+    renderEmptyDocument();
+    refreshSelectors(false);
+    renderTagButtons();
+    renderTagTemplateList();
+  })();
+</script>
+</body>
+</html>

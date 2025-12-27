@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MENU PRINCIPAL</title>
+
+  <style>
+    :root{
+      --w95-bg:#c0c0c0;
+      --w95-light:#ffffff;
+      --w95-dark:#808080;
+      --w95-shadow:#404040;
+      --w95-blue:#000080;
+      --w95-hilite:#dfdfdf;
+      --text:#000;
+      --card:#ffffff;
+    }
+
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:"MS Sans Serif", Tahoma, Arial, Helvetica, sans-serif;
+      background: var(--w95-bg);
+      color: var(--text);
+    }
+
+    .topbar{
+      position:sticky; top:0; z-index:50;
+      background: var(--w95-bg);
+      padding:6px 8px 10px;
+      border-top:2px solid var(--w95-light);
+      border-left:2px solid var(--w95-light);
+      border-right:2px solid var(--w95-shadow);
+      border-bottom:2px solid var(--w95-shadow);
+    }
+    .topbar::before{
+      content:"Plataforma de inspecciones de bomberos Puy Du Fou España";
+      display:block;
+      background: var(--w95-blue);
+      color:#fff;
+      font-weight:900;
+      font-size:12px;
+      padding:4px 6px;
+      margin:-6px -8px 10px -8px;
+      border-bottom:1px solid #000;
+    }
+
+    .shell{
+      max-width:980px;
+      margin:14px auto;
+      padding:0 10px 24px;
+    }
+
+    .window{
+      background: var(--w95-bg);
+      border-top:2px solid var(--w95-light);
+      border-left:2px solid var(--w95-light);
+      border-right:2px solid var(--w95-shadow);
+      border-bottom:2px solid var(--w95-shadow);
+      padding:12px;
+    }
+
+    .windowTitle{
+      margin:0 0 10px 0;
+      font-size:12px;
+      font-weight:900;
+      background: var(--w95-blue);
+      color:#fff;
+      padding:4px 6px;
+      border:1px solid #000;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:12px;
+    }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    .card{
+      background: var(--card);
+      border-top:2px solid var(--w95-light);
+      border-left:2px solid var(--w95-light);
+      border-right:2px solid var(--w95-shadow);
+      border-bottom:2px solid var(--w95-shadow);
+      padding:14px;
+    }
+
+    .card h2{
+      margin:0 0 8px 0;
+      font-size:14px;
+      font-weight:900;
+    }
+    .card p{
+      margin:0 0 12px 0;
+      font-size:12px;
+      font-weight:700;
+      line-height:1.35;
+      opacity:.95;
+    }
+
+    .btn{
+      width:100%;
+      border-top:2px solid var(--w95-light);
+      border-left:2px solid var(--w95-light);
+      border-right:2px solid var(--w95-shadow);
+      border-bottom:2px solid var(--w95-shadow);
+      background: var(--w95-bg);
+      padding:10px 12px;
+      font-weight:900;
+      cursor:pointer;
+      font-size:12px;
+      font-family: inherit;
+      text-align:left;
+    }
+    .btn:active{
+      border-top:2px solid var(--w95-shadow);
+      border-left:2px solid var(--w95-shadow);
+      border-right:2px solid var(--w95-light);
+      border-bottom:2px solid var(--w95-light);
+    }
+    .btn.primary{ background: var(--w95-hilite); }
+    .btn.danger{ background:#ffd6d6; }
+
+    .logo-area{
+      margin-top:20px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      min-height:260px;
+      background: var(--w95-bg);
+    }
+
+    .logo-area img{
+      max-width:380px;
+      width:100%;
+      opacity:0.35;
+      filter: grayscale(100%);
+      pointer-events:none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar"></div>
+
+  <div class="shell">
+    <div class="window">
+      <div class="windowTitle">Accesos</div>
+
+      <div class="grid">
+        <div class="card">
+          <p>Gestión / visor de registros, consultas y listados.</p>
+          <button class="btn primary" type="button" onclick="goTo('base_de_datos.html')">
+            Entrar a BASE DE DATOS
+          </button>
+        </div>
+
+        <div class="card">
+          <p>Entrada y edición de inspecciones.</p>
+          <button class="btn primary" type="button" onclick="goTo('inspector.html')">
+            Entrar a INSPECTOR
+          </button>
+        </div>
+
+        <div class="card">
+          <p>Zona protegida. Requiere contraseña.</p>
+          <button class="btn danger" type="button" onclick="goAdmin()">
+            Entrar a ADMINISTRADOR
+          </button>
+        </div>
+      </div>
+
+      <div class="logo-area">
+        <img
+          src="https://i.ibb.co/q3K7djsz/Escudo-bomberos-puy-du-fou-removebg-preview.png"
+          alt="Escudo decorativo"
+        />
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const ROUTES = {
+      db: "base_de_datos.html",
+      inspector: "inspector.html",
+      admin: "administrador.html"
+    };
+
+    const ADMIN_PASSWORD = "Pdft@2026";
+
+    function goTo(file){
+      window.location.href = String(file || "");
+    }
+
+    function goAdmin(){
+      const pass = prompt("Introduce la contraseña de ADMINISTRADOR:");
+      if(pass === null) return;
+      if(pass === ADMIN_PASSWORD){
+        goTo(ROUTES.admin);
+      }else{
+        alert("Contraseña incorrecta.");
+      }
+    }
+  </script>
+</body>
+</html>
