@@ -512,6 +512,7 @@
     <div class="group">
       <button class="btn primary" type="button" onclick="importJsonFiles()">Importar JSON(s)</button>
       <button id="btnExportPDF" class="btn" type="button" onclick="exportPDF()" disabled>Exportar PDF</button>
+      <button id="btnExportJSON" class="btn" type="button" onclick="exportJSONForDB()" disabled>Exportar JSON (BBDD)</button>
       <button id="btnResetForm" class="btn" type="button" onclick="resetCurrentForm()" disabled>Reiniciar formulario</button>
     </div>
     <div class="group">
@@ -629,6 +630,41 @@
     return db.find(x=>x.id===currentId) || null;
   }
 
+  function exportStamp(date){
+    const d = date instanceof Date ? date : new Date();
+    const pad = (n)=> String(n).padStart(2,'0');
+    const y = d.getFullYear();
+    const m = pad(d.getMonth()+1);
+    const da = pad(d.getDate());
+    const h = pad(d.getHours());
+    const mi = pad(d.getMinutes());
+    const s = pad(d.getSeconds());
+    return `${y}-${m}-${da}_${h}-${mi}-${s}`;
+  }
+
+  function makeSafeName(name, fallback){
+    const out = normalize(name)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-zA-Z0-9_\-]+/g,'_')
+      .replace(/_+/g,'_')
+      .replace(/^_+|_+$/g,'');
+    return out || fallback || 'Archivo';
+  }
+
+  function saveBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'export.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 2500);
+  }
+
   function updateReadTagButtonText(){
     const btn = document.getElementById('btnReadTag');
     if(!btn) return;
@@ -658,6 +694,7 @@
 
     btnRead.disabled = !hasDB;
     document.getElementById('btnExportPDF').disabled = !hasCurrent;
+    document.getElementById('btnExportJSON').disabled = !hasCurrent;
     document.getElementById('btnResetForm').disabled = !hasCurrent;
 
     updateReadTagButtonText();
@@ -697,6 +734,52 @@
     window.print();
 
     document.title = oldTitle;
+  }
+
+  /* =========================
+     JSON EXPORT (compatible Base de datos: localStorage)
+     - Exporta un JSON que base_de_datos.html puede importar.
+     - Estructura: { category, form, lastEditedISO, data: {header, fields, ...} }
+  ========================= */
+  function exportJSONForDB(){
+    const item = getCurrentItem();
+    if(!item || !item.data){
+      alert('No hay formulario abierto.');
+      return;
+    }
+
+    // Asegura que textarea autosize esté actualizado y que la fecha de edición sea consistente
+    refreshAutoGrow();
+    touchEdited();
+
+    const lastISO = normalize(lastEditedISO) || nowISO();
+
+    const data = deepClone(item.data);
+    data.header = (data.header && typeof data.header === 'object') ? data.header : {};
+    data.header.logo = FIXED_LOGO_URL;
+    data.header.lastEdited = lastISO;
+
+    data.meta = (data.meta && typeof data.meta === 'object') ? data.meta : {};
+    data.meta.category = data.meta.category || item.category || '';
+    data.meta.name = data.meta.name || item.form || '';
+
+    const out = {
+      category: item.category || data.meta.category || '',
+      form: item.form || data.meta.name || '',
+      lastEditedISO: lastISO,
+      data
+    };
+
+    const safeCat = makeSafeName(out.category || 'Categoria', 'Categoria');
+    const safeForm = makeSafeName(out.form || 'Formulario', 'Formulario');
+    const filename = `inspeccion_${safeCat}__${safeForm}__${exportStamp(new Date())}.json`;
+
+    try{
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json;charset=utf-8' });
+      saveBlob(blob, filename);
+    }catch(e){
+      alert('No se pudo exportar el JSON.');
+    }
   }
 
   /* =========================
