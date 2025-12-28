@@ -13,26 +13,19 @@
     --section-bg:#e6e6e6;
     --section-text:#000000;
     --body-text:#000000;
-
-    /* Win95-ish */
     --w95-bg:#c0c0c0;
     --w95-light:#ffffff;
     --w95-dark:#808080;
     --w95-shadow:#404040;
     --w95-blue:#000080;
     --w95-hilite:#dfdfdf;
-
-    /* Sizing */
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
-
     --container-max: 1200px;
     --pad: 10px;
-
-    /* Responsive page scaling (screen) */
-    --page-padding: 10mm; /* print-friendly, overridden on small screens */
+    --page-padding: 10mm;
     --logo-w: 190px;
     --logo-h: 140px;
     --photo-w: 160px;
@@ -51,7 +44,6 @@
     text-size-adjust: 100%;
   }
 
-  /* Topbar */
   .topbar{
     position:sticky; top:0; z-index:50;
     background: var(--w95-bg);
@@ -81,7 +73,6 @@
     flex-wrap:wrap;
     align-items:center;
     justify-content:space-between;
-
     background: var(--w95-bg);
     padding:10px;
     border-top:2px solid var(--w95-light);
@@ -128,7 +119,6 @@
     line-height:1.35;
   }
 
-  /* Main CTA */
   .ctaWrap{
     max-width:var(--container-max);
     margin:12px auto 0;
@@ -156,14 +146,12 @@
     border-bottom:3px solid var(--w95-light);
   }
 
-  /* Workspace */
   .workspace{
     max-width:var(--container-max);
     margin:12px auto;
     padding:0 var(--pad) calc(20px + var(--safe-bottom));
   }
 
-  /* Page: responsive on screens, A4 on print */
   .page{
     width:min(210mm, 100%);
     min-height:auto;
@@ -178,7 +166,6 @@
     box-sizing:border-box;
   }
 
-  /* ===== Documento (estructura fija) ===== */
   .doc-header{
     border:2px solid var(--border);
     background: var(--header-bg);
@@ -409,7 +396,6 @@
     line-height:1.25;
   }
 
-  /* ===== Responsive (vertical) ===== */
   @media (max-width: 980px){
     :root{
       --page-padding: 14px;
@@ -475,7 +461,7 @@
       font-size:12px;
     }
     .textline input[type="text"], textarea{
-      font-size:16px; /* evita zoom en iOS */
+      font-size:16px;
     }
   }
 
@@ -506,13 +492,13 @@
 
 <body>
 
-<!-- ARRIBA: conservar importación de JSON + export PDF + reset formulario -->
 <div class="topbar">
   <div class="row">
     <div class="group">
       <button class="btn primary" type="button" onclick="importJsonFiles()">Importar JSON(s)</button>
       <button id="btnExportPDF" class="btn" type="button" onclick="exportPDF()" disabled>Exportar PDF</button>
-      <button id="btnExportJSON" class="btn" type="button" onclick="exportJSONForDB()" disabled>Exportar JSON (BBDD)</button>
+      <button id="btnExportJSON" class="btn" type="button" onclick="exportAllInspectionsForDB()" disabled>Exportar JSON (BBDD)</button>
+      <button id="btnSaveInspection" class="btn" type="button" onclick="saveCurrentInspection()" disabled>Guardar inspección</button>
       <button id="btnResetForm" class="btn" type="button" onclick="resetCurrentForm()" disabled>Reiniciar formulario</button>
     </div>
     <div class="group">
@@ -521,7 +507,6 @@
   </div>
 </div>
 
-<!-- Botón principal grande para leer el TAG -->
 <div class="ctaWrap">
   <button id="btnReadTag" class="cta" type="button" onclick="readTagAndOpen()">LEER TAG</button>
 </div>
@@ -550,28 +535,139 @@
 </div>
 
 <script>
-  /* =========================
-     CONFIG
-  ========================= */
   const FIXED_LOGO_URL = 'https://i.ibb.co/BK6jvxPG/image.png';
 
-  /* Fotos: compresión para guardar en el mismo formato (dataURL) */
-  const PHOTO_MAX_EDGE = 1600;     // px
-  const PHOTO_JPEG_QUALITY = 0.82; // 0..1
-  const PHOTO_SLOTS_DEFAULT = 4;   // si no viene en config
+  const PHOTO_MAX_EDGE = 1600;
+  const PHOTO_JPEG_QUALITY = 0.82;
+  const PHOTO_SLOTS_DEFAULT = 4;
 
-  /* =========================
-     STATE
-  ========================= */
-  // Template DB in memory:
-  // { id, category, form, tags:[], sourceFileName, baseData, data }
   const db = [];
   let currentId = null;
   let lastEditedISO = null;
 
-  /* =========================
-     HELPERS
-  ========================= */
+  let nfcReader = null;
+  let nfcActive = false;
+  let nfcEverStarted = false;
+  let lastNFCTag = '';
+  let lastNFCTimeISO = null;
+  let nfcStatusText = 'Inicializando…';
+  let pendingOpenFromNFC = false;
+
+  let lastOpenedTag = '';
+
+  const STORAGE_KEY = 'inspector_persist_v1';
+  const INSPECTIONS_KEY = 'inspector_inspections_v1';
+  const inspections = [];
+
+  function safeLSSet(key, value){
+    try{ localStorage.setItem(key, value); return true; }catch(e){ return false; }
+  }
+  function safeLSGet(key){
+    try{ return localStorage.getItem(key); }catch(e){ return null; }
+  }
+  function safeLSRemove(key){
+    try{ localStorage.removeItem(key); return true; }catch(e){ return false; }
+  }
+
+  function serializeState(){
+    return {
+      v: 1,
+      savedAt: nowISO(),
+      db,
+      currentId,
+      lastEditedISO,
+      lastNFCTag,
+      lastNFCTimeISO,
+      lastOpenedTag
+    };
+  }
+
+  function validateTemplate(t){
+    if(!t || typeof t !== 'object') return false;
+    if(!t.id || !t.category || !t.form) return false;
+    if(!t.baseData || typeof t.baseData !== 'object') return false;
+    if(!t.data || typeof t.data !== 'object') return false;
+    if(!Array.isArray(t.tags)) t.tags = [];
+    return true;
+  }
+
+  function loadState(){
+    const raw = safeLSGet(STORAGE_KEY);
+    if(!raw) return false;
+
+    const parsed = safeJSONParse(raw);
+    if(!parsed || typeof parsed !== 'object') return false;
+
+    if(Array.isArray(parsed.db)){
+      db.length = 0;
+      for(const t of parsed.db){
+        if(validateTemplate(t)) db.push(t);
+      }
+    }
+
+    currentId = parsed.currentId || null;
+    lastEditedISO = parsed.lastEditedISO || null;
+    lastNFCTag = parsed.lastNFCTag || '';
+    lastNFCTimeISO = parsed.lastNFCTimeISO || null;
+    lastOpenedTag = parsed.lastOpenedTag || '';
+
+    return true;
+  }
+
+  function saveState(){
+    const payload = serializeState();
+    try{
+      const txt = JSON.stringify(payload);
+      safeLSSet(STORAGE_KEY, txt);
+    }catch(e){}
+  }
+
+  function serializeInspection(item){
+    refreshAutoGrow();
+    touchEdited();
+    const lastISO = normalize(lastEditedISO) || nowISO();
+    const data = deepClone(item.data || {});
+    data.header = (data.header && typeof data.header === 'object') ? data.header : {};
+    data.header.logo = FIXED_LOGO_URL;
+    data.header.lastEdited = lastISO;
+
+    data.meta = (data.meta && typeof data.meta === 'object') ? data.meta : {};
+    data.meta.category = data.meta.category || item.category || '';
+    data.meta.name = data.meta.name || item.form || '';
+
+    return {
+      id: makeId(),
+      savedAtISO: nowISO(),
+      templateId: item.id || '',
+      tag: normalize(lastOpenedTag) || normalize(lastNFCTag) || '',
+      category: item.category || data.meta.category || '',
+      form: item.form || data.meta.name || '',
+      lastEditedISO: lastISO,
+      data
+    };
+  }
+
+  function loadInspections(){
+    const raw = safeLSGet(INSPECTIONS_KEY);
+    if(!raw) return false;
+    const parsed = safeJSONParse(raw);
+    if(!parsed || typeof parsed !== 'object') return false;
+    const list = Array.isArray(parsed.inspections) ? parsed.inspections : (Array.isArray(parsed) ? parsed : []);
+    inspections.length = 0;
+    for(const it of list){
+      if(!it || typeof it !== 'object') continue;
+      if(!it.id || !it.data) continue;
+      inspections.push(it);
+    }
+    return true;
+  }
+
+  function saveInspections(){
+    try{
+      safeLSSet(INSPECTIONS_KEY, JSON.stringify({ v: 1, savedAt: nowISO(), inspections }));
+    }catch(e){}
+  }
+
   function escapeHTML(str){
     return String(str ?? '').replace(/[&<>"']/g, m=>({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -638,8 +734,8 @@
     const da = pad(d.getDate());
     const h = pad(d.getHours());
     const mi = pad(d.getMinutes());
-    const s = pad(d.getSeconds());
-    return `${y}-${m}-${da}_${h}-${mi}-${s}`;
+    const se = pad(d.getSeconds());
+    return `${y}-${m}-${da}_${h}-${mi}-${se}`;
   }
 
   function makeSafeName(name, fallback){
@@ -678,8 +774,6 @@
     const q = normalize(lastNFCTag);
     const opened = normalize(lastOpenedTag);
 
-    // Si hay un TAG leído y es distinto al del formulario abierto (o no hay formulario aún),
-    // el botón pasa a "ABRIR FORMULARIO".
     if(q && (!opened || q.toLowerCase() !== opened.toLowerCase())){
       btn.textContent = 'ABRIR FORMULARIO';
     }else{
@@ -690,12 +784,14 @@
   function updateButtons(){
     const hasDB = db.length > 0;
     const hasCurrent = !!getCurrentItem();
+    const hasInspections = inspections.length > 0;
     const btnRead = document.getElementById('btnReadTag');
 
     btnRead.disabled = !hasDB;
     document.getElementById('btnExportPDF').disabled = !hasCurrent;
-    document.getElementById('btnExportJSON').disabled = !hasCurrent;
+    document.getElementById('btnExportJSON').disabled = !hasInspections;
     document.getElementById('btnResetForm').disabled = !hasCurrent;
+    document.getElementById('btnSaveInspection').disabled = !hasCurrent;
 
     updateReadTagButtonText();
   }
@@ -703,23 +799,23 @@
   function updateStatus(){
     const el = document.getElementById('statusLine');
     const count = db.length;
+    const insCount = inspections.length;
     const item = getCurrentItem();
 
     const a = (count === 0)
       ? 'Sin JSON importado.'
       : `Plantillas cargadas: ${count}`;
 
+    const ins = `Inspecciones guardadas: ${insCount}`;
+
     const b = item
       ? `${escapeHTML(item.category)} / ${escapeHTML(item.form)}`
       : 'Ninguno.';
 
-    el.innerHTML = `<div><b>Estado:</b> ${a}</div><div><b>Formulario:</b> ${b}</div><div><b>NFC:</b> ${escapeHTML(nfcStatusText || '—')}</div>`;
+    el.innerHTML = `<div><b>Estado:</b> ${a}</div><div><b>Inspecciones:</b> ${ins}</div><div><b>Formulario:</b> ${b}</div><div><b>NFC:</b> ${escapeHTML(nfcStatusText || '—')}</div>`;
     updateButtons();
   }
 
-  /* =========================
-     PDF EXPORT (como Inspector: impresión A4 -> Guardar como PDF)
-  ========================= */
   function exportPDF(){
     const item = getCurrentItem();
     if(!item){
@@ -736,43 +832,33 @@
     document.title = oldTitle;
   }
 
-  /* =========================
-     JSON EXPORT (compatible Base de datos: localStorage)
-     - Exporta un JSON que base_de_datos.html puede importar.
-     - Estructura: { category, form, lastEditedISO, data: {header, fields, ...} }
-  ========================= */
-  function exportJSONForDB(){
+  function saveCurrentInspection(){
     const item = getCurrentItem();
     if(!item || !item.data){
       alert('No hay formulario abierto.');
       return;
     }
 
-    // Asegura que textarea autosize esté actualizado y que la fecha de edición sea consistente
-    refreshAutoGrow();
-    touchEdited();
+    const ins = serializeInspection(item);
+    inspections.push(ins);
+    saveInspections();
+    updateStatus();
+    alert('Inspección guardada.');
+  }
 
-    const lastISO = normalize(lastEditedISO) || nowISO();
-
-    const data = deepClone(item.data);
-    data.header = (data.header && typeof data.header === 'object') ? data.header : {};
-    data.header.logo = FIXED_LOGO_URL;
-    data.header.lastEdited = lastISO;
-
-    data.meta = (data.meta && typeof data.meta === 'object') ? data.meta : {};
-    data.meta.category = data.meta.category || item.category || '';
-    data.meta.name = data.meta.name || item.form || '';
+  function exportAllInspectionsForDB(){
+    if(inspections.length === 0){
+      alert('No hay inspecciones guardadas.');
+      return;
+    }
 
     const out = {
-      category: item.category || data.meta.category || '',
-      form: item.form || data.meta.name || '',
-      lastEditedISO: lastISO,
-      data
+      format: 'inspector_inspections_v1',
+      exportedAtISO: nowISO(),
+      inspections: inspections.map(x=>deepClone(x))
     };
 
-    const safeCat = makeSafeName(out.category || 'Categoria', 'Categoria');
-    const safeForm = makeSafeName(out.form || 'Formulario', 'Formulario');
-    const filename = `inspeccion_${safeCat}__${safeForm}__${exportStamp(new Date())}.json`;
+    const filename = `inspecciones__${exportStamp(new Date())}.json`;
 
     try{
       const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -782,9 +868,6 @@
     }
   }
 
-  /* =========================
-     FOTO: COMPRESIÓN -> dataURL (JPEG)
-  ========================= */
   function readFileAsDataURL(file){
     return new Promise((resolve, reject)=>{
       const fr = new FileReader();
@@ -804,10 +887,8 @@
   }
 
   async function fileToCompressedDataURL(file){
-    // Leer como dataURL
     const rawDataUrl = await readFileAsDataURL(file);
 
-    // Intentar comprimir/redimensionar (si canvas disponible)
     try{
       const img = await loadImageFromDataURL(rawDataUrl);
 
@@ -820,7 +901,6 @@
       const tw = Math.max(1, Math.round(w * scale));
       const th = Math.max(1, Math.round(h * scale));
 
-      // Si ya es pequeña, devolver tal cual para preservar lo máximo posible
       if(scale === 1){
         return rawDataUrl;
       }
@@ -833,7 +913,6 @@
 
       ctx.drawImage(img, 0, 0, tw, th);
 
-      // JPEG para tamaño razonable (mismo “formato” de guardado: dataURL en JSON)
       const out = canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY);
       return out || rawDataUrl;
     }catch(e){
@@ -858,7 +937,6 @@
       const inp = document.createElement('input');
       inp.type = 'file';
       inp.accept = 'image/*';
-      // En móvil, esto suele abrir cámara/galería; si el navegador soporta cámara directa, puede sugerirla
       inp.setAttribute('capture', 'environment');
       inp.multiple = !!multiple;
       inp.onchange = ()=> {
@@ -878,6 +956,8 @@
       item.data.header = item.data.header || {};
       item.data.header.lastEdited = lastEditedISO;
     }
+
+    saveState();
   }
 
   async function addPhotosToField(idx, { replaceAt = null } = {}){
@@ -893,7 +973,6 @@
 
     const slots = getPhotoSlotsForField(f);
 
-    // Si replaceAt está definido, solo reemplazar una ranura
     const files = await openPhotoPicker({ multiple: replaceAt === null });
     if(!files || files.length === 0) return;
 
@@ -903,23 +982,19 @@
         const dataUrl = await fileToCompressedDataURL(files[0]);
         f.images[pos] = dataUrl;
       }else{
-        // Añadir tantas como quepan
         for(const file of files){
           if(f.images.filter(Boolean).length >= slots) break;
           const dataUrl = await fileToCompressedDataURL(file);
 
-          // Buscar primer hueco libre (null/undefined/'')
           let putAt = f.images.findIndex(x => !x);
           if(putAt === -1) putAt = f.images.length;
 
-          // Asegurar que no exceda slots
           if(putAt >= slots) break;
 
           f.images[putAt] = dataUrl;
         }
       }
 
-      // Normalizar longitud
       f.images = f.images.slice(0, slots);
       while(f.images.length < slots) f.images.push('');
 
@@ -944,7 +1019,6 @@
     const p = clampInt(pos, 0, slots - 1);
     if(p >= 0 && p < f.images.length){
       f.images[p] = '';
-      // Mantener longitud fija
       f.images = f.images.slice(0, slots);
       while(f.images.length < slots) f.images.push('');
       touchEdited();
@@ -952,9 +1026,6 @@
     }
   }
 
-  /* =========================
-     RENDER
-  ========================= */
   function renderEmptyDocument(){
     lastEditedISO = nowISO();
     updateLastEditedUI();
@@ -1013,7 +1084,6 @@
       const imagesRaw = Array.isArray(d.images) ? d.images : [];
       const slots = clampInt(config.slots ?? PHOTO_SLOTS_DEFAULT, 1, 12);
 
-      // Normalizar a tamaño fijo para mantener el formato del formulario
       const images = imagesRaw.slice(0, slots);
       while(images.length < slots) images.push('');
 
@@ -1076,7 +1146,6 @@
       return;
     }
 
-    // theme
     if(data.theme){
       setVar('--border', data.theme.border || '#000000');
       setVar('--header-bg', data.theme.headerBg || '#ffffff');
@@ -1086,7 +1155,6 @@
       setVar('--page-bg', data.theme.pageBg || '#ffffff');
     }
 
-    // header
     const h = data.header && typeof data.header==='object' ? data.header : {};
     const title = h.title || '';
     const subtitle = h.subtitle || '';
@@ -1098,11 +1166,9 @@
     document.getElementById('docTitle').textContent = title;
     document.getElementById('docSubtitle').textContent = subtitle;
 
-    // fields
     const mount = document.getElementById('fieldsMount');
     const fields = Array.isArray(data.fields) ? data.fields : [];
 
-    // Normalizar campos photo para mantener longitud fija antes de pintar
     for(const f of fields){
       if(f && normalize(f.type) === 'photos'){
         f.config = (f.config && typeof f.config==='object') ? f.config : {};
@@ -1119,9 +1185,6 @@
     updateStatus();
   }
 
-  /* =========================
-     FILL HANDLERS (contenido)
-  ========================= */
   function onFieldChange(idx){
     const item = getCurrentItem();
     if(!item || !item.data) return;
@@ -1149,13 +1212,8 @@
       f.config = (f.config && typeof f.config==='object') ? f.config : {};
       touchEdited();
     }
-
-    // photos se gestionan con addPhotosToField/removePhotoFromField
   }
 
-  /* =========================
-     RESET FORM (igual que inspector: volver a baseData)
-  ========================= */
   function resetCurrentForm(){
     const item = getCurrentItem();
     if(!item){
@@ -1174,23 +1232,8 @@
       item.data.header.lastEdited = lastEditedISO;
     }
     loadLayoutFromData(item.data);
+    saveState();
   }
-
-  /* =========================
-     NFC (Web NFC): LECTURA AUTOMÁTICA AL ABRIR
-     - Inicia la lectura al cargar el HTML.
-     - Guarda el UID (serialNumber) del último TAG leído.
-     - Al pulsar "LEER TAG", usa ese UID para abrir el formulario.
-  ========================= */
-  let nfcReader = null;
-  let nfcActive = false;
-  let nfcEverStarted = false;
-  let lastNFCTag = '';
-  let lastNFCTimeISO = null;
-  let nfcStatusText = 'Inicializando…';
-
-  // Tag usado para abrir el formulario actualmente (para controlar el texto del botón)
-  let lastOpenedTag = '';
 
   function isNFCSupported(){
     return ('NDEFReader' in window);
@@ -1222,7 +1265,12 @@
         }else{
           nfcStatusText = 'TAG leído (sin UID)';
         }
+        saveState();
         updateStatus();
+        if(pendingOpenFromNFC && uid){
+          pendingOpenFromNFC = false;
+          openByTag(uid);
+        }
       };
 
       nfcReader.onreadingerror = ()=>{
@@ -1233,7 +1281,6 @@
       return true;
     }catch(err){
       const name = err && err.name ? String(err.name) : '';
-      // En algunos navegadores requiere gesto de usuario para permitir NFC.
       if(auto){
         nfcStatusText = (name === 'NotAllowedError' || name === 'SecurityError')
           ? 'Pulsa “LEER TAG” para activar NFC'
@@ -1248,9 +1295,6 @@
     }
   }
 
-  /* =========================
-     TAG: LECTOR + ABRIR FORMULARIO
-  ========================= */
   function findTemplatesByTag(tag){
     const t = normalize(tag);
     if(!t) return [];
@@ -1266,52 +1310,19 @@
     }
     currentId = item.id;
     loadLayoutFromData(item.data);
+    saveState();
   }
 
-  function readTagAndOpen(){
-    if(db.length === 0){
-      alert('Primero importa uno o varios JSON.');
-      return;
-    }
+  function openByTag(tag){
+    const q = normalize(tag);
+    if(!q) return;
 
-    // 1) Preferir UID del último TAG NFC leído
-    let q = normalize(lastNFCTag);
-
-    // Si el TAG leído es el mismo que el del formulario ya abierto, no abrimos de nuevo.
-    // Debe volver a ponerse en modo "LEER TAG" hasta leer uno distinto.
     const openedTag = normalize(lastOpenedTag);
     if(q && openedTag && q.toLowerCase() === openedTag.toLowerCase()){
-      alert('Ya está abierto el formulario de este TAG. Acerca un TAG distinto y vuelve a pulsar “LEER TAG”.');
-      updateReadTagButtonText();
       return;
-    }
-
-    // 2) Si aún no hay UID, intentar activar NFC (si no está activo) y pedir acercar el TAG
-    if(!q){
-      if(!nfcActive){
-        // Intento con gesto de usuario (click del botón)
-        startNFC(false);
-      }
-
-      if(nfcActive || isNFCSupported()){
-        alert('Acerca un TAG NFC al dispositivo. Cuando lo lea, vuelve a pulsar “LEER TAG”.');
-        return;
-      }
-    }
-
-    // 3) Fallback manual si NFC no está disponible
-    if(!q){
-      const tag = prompt('Introduce/pega el TAG leído:');
-      if(tag === null) return;
-      q = normalize(tag);
-      if(!q){
-        alert('TAG vacío.');
-        return;
-      }
     }
 
     const matches = findTemplatesByTag(q);
-
     if(matches.length === 0){
       alert(`No se encontró ninguna plantilla con el TAG: ${q}`);
       return;
@@ -1320,6 +1331,7 @@
     if(matches.length === 1){
       openTemplate(matches[0]);
       lastOpenedTag = q;
+      saveState();
       updateReadTagButtonText();
       return;
     }
@@ -1341,12 +1353,50 @@
 
     openTemplate(matches[n-1]);
     lastOpenedTag = q;
+    saveState();
     updateReadTagButtonText();
   }
 
-  /* =========================
-     IMPORT JSON(s)
-  ========================= */
+  function readTagAndOpen(){
+    if(db.length === 0){
+      alert('Primero importa uno o varios JSON.');
+      return;
+    }
+
+    let q = normalize(lastNFCTag);
+
+    const openedTag = normalize(lastOpenedTag);
+    if(q && openedTag && q.toLowerCase() === openedTag.toLowerCase()){
+      alert('Ya está abierto el formulario de este TAG. Acerca un TAG distinto y vuelve a pulsar “LEER TAG”.');
+      updateReadTagButtonText();
+      return;
+    }
+
+    if(!q){
+      pendingOpenFromNFC = true;
+      if(!nfcActive){
+        startNFC(false);
+      }
+      if(isNFCSupported()){
+        nfcStatusText = 'Acerca un TAG NFC…';
+        updateStatus();
+        return;
+      }
+    }
+
+    if(!q){
+      const tag = prompt('Introduce/pega el TAG leído:');
+      if(tag === null) return;
+      q = normalize(tag);
+      if(!q){
+        alert('TAG vacío.');
+        return;
+      }
+    }
+
+    openByTag(q);
+  }
+
   function importJsonFiles(){
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -1401,7 +1451,6 @@
 
       layout.header.logo = FIXED_LOGO_URL;
 
-      // Normalizar campos photos (slots fijos)
       for(const f of layout.fields){
         if(f && normalize(f.type)==='photos'){
           f.config = (f.config && typeof f.config==='object') ? f.config : {};
@@ -1484,6 +1533,7 @@
         }
       }
 
+      saveState();
       updateStatus();
 
       if(db.length === 1){
@@ -1503,20 +1553,49 @@
     db.length = 0;
     currentId = null;
     lastOpenedTag = '';
+    lastNFCTag = '';
+    lastNFCTimeISO = null;
+    safeLSRemove(STORAGE_KEY);
+    safeLSRemove(INSPECTIONS_KEY);
+    inspections.length = 0;
     renderEmptyDocument();
+    saveState();
   }
 
-  /* =========================
-     INIT
-  ========================= */
   (function init(){
-    lastEditedISO = nowISO();
+    const restored = loadState();
+    loadInspections();
+
+    lastEditedISO = lastEditedISO || nowISO();
     updateLastEditedUI();
     applyFixedLogo();
-    renderEmptyDocument();
 
-    // NFC: intentar activar automáticamente al abrir
+    if(restored && db.length > 0){
+      const item = getCurrentItem();
+      if(item && item.data){
+        loadLayoutFromData(item.data);
+      }else{
+        currentId = null;
+        renderEmptyDocument();
+      }
+    }else{
+      renderEmptyDocument();
+    }
+
     startNFC(true);
+
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.visibilityState === 'visible') startNFC(true);
+    });
+    window.addEventListener('focus', ()=> startNFC(true));
+
+    const oneTap = ()=>{
+      document.removeEventListener('pointerdown', oneTap, true);
+      if(!nfcActive) startNFC(false);
+    };
+    document.addEventListener('pointerdown', oneTap, true);
+
+    saveState();
   })();
 </script>
 
