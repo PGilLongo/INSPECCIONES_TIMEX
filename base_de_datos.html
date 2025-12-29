@@ -226,6 +226,10 @@
     font-weight:800;
   }
 </style>
+
+<!-- 1) Firebase (compat, sin bundler) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 </head>
 
 <body>
@@ -233,12 +237,11 @@
   <div class="window" style="flex:1">
     <div class="titlebar">
       <div>Base de datos</div>
-      <div class="muted">Local (localStorage)</div>
+      <div class="muted">Cloud (Firestore · inspections_v1)</div>
     </div>
     <div class="content">
       <div class="toolbar">
         <div class="group">
-          <button type="button" class="primary" onclick="importJsonFiles()">Importar JSON</button>
           <button type="button" class="danger" onclick="clearDB()">Vaciar BBDD</button>
         </div>
         <div class="group">
@@ -259,7 +262,14 @@
           <div class="col-12">
             <label>Búsqueda rápida</label>
             <input id="histSearch" type="text" placeholder="Filtra por texto…" oninput="resetToFirstPageAndRender()" />
-            <div class="muted" style="margin-top:6px">Consejo: busca por categoría, formulario o cualquier texto que exista dentro del JSON importado.</div>
+            <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+              <button type="button" onclick="runSearch()">Buscar</button>
+              <button type="button" onclick="loadAllFromCloud()">Cargar todas</button>
+              <div class="muted">Consejo: TAG/código exacto usa "Buscar". "Cargar todas" trae todo y filtra local.</div>
+            </div>
+            <div class="muted" style="margin-top:6px">
+              Consejo: busca por categoría, formulario o cualquier texto que exista dentro del JSON (incluye TAG/código).
+            </div>
           </div>
 
           <div class="col-3">
@@ -297,10 +307,79 @@
 </div>
 
 <script>
-const DB_KEY = 'BBDDINS_DB_INSPECTIONS_V1';
+/* __GLOBAL_ERROR_WIRED__ */
+window.addEventListener('error', (e)=>{
+  console.error('JS error:', e.error || e.message, e);
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  console.error('Unhandled promise rejection:', e.reason);
+});
+
+/**
+ * 2) Firebase config (literal)
+ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBLP0yGc_Yh0nKGNYbPcYabTg25LDw2wco",
+  authDomain: "inspector-b4f41.firebaseapp.com",
+  projectId: "inspector-b4f41",
+  storageBucket: "inspector-b4f41.firebasestorage.app",
+  messagingSenderId: "333394046622",
+  appId: "1:333394046622:web:caa18c6f1d341b0a97158f"
+};
+
+
+
+  function fsErrShort(e){
+    try{
+      const code = e && (e.code || e.name) ? String(e.code || e.name) : '';
+      const msg = e && e.message ? String(e.message) : String(e||'');
+      const out = (code && msg) ? (code + ' — ' + msg) : (code || msg);
+      return out.trim() || 'error';
+    }catch(_){ return 'error'; }
+  }
+  function fsRulesHint(e){
+    const s = (e && (e.code || '') ? String(e.code) : '') + ' ' + (e && e.message ? String(e.message) : '');
+    if(/permission-denied/i.test(s)){
+      return "\n\nParece un problema de REGLAS: si no usas login, Firestore debe permitir lecturas/escrituras públicas (o habilitar Auth).";
+    }
+    if(/failed-precondition/i.test(s) && /index/i.test(s)){
+      return "\n\nParece faltar un índice compuesto en Firestore (consola -> Firestore -> Indexes).";
+    }
+    if(/unavailable|network|offline|fetch/i.test(s)){
+      return "\n\nParece un problema de conexión/red o bloqueo del navegador.";
+    }
+    return "";
+  }
+
+/**
+ * Firestore: colección persistente
+ * 3) Estructura en templates_v1:
+ * DocID: <id>
+ * {
+ *   name: string,
+ *   category: string,
+ *   code: string,
+ *   createdAt: ISOstring,
+ *   updatedAt: ISOstring,
+ *   data: object
+ * }
+ */
+const COLLECTION_NAME = 'inspections_v1';
+const INS_COLLECTION = COLLECTION_NAME;
 const PAGE_SIZE = 50;
 
 let __page = 1;
+
+// Cache en memoria (la fuente de verdad SIEMPRE es Firestore)
+let __dbCache = [];
+let __cacheLoaded = false;
+let __loadedAll = false; // si se ha hecho "Cargar todas"
+
+let __fire = {
+  app: null,
+  db: null,
+  col: null
+};
 
 function nowISO(){
   try{ return new Date().toISOString(); }catch(e){ return ''+Date.now(); }
@@ -376,6 +455,8 @@ function normalizeImportedRecord(raw){
 
   if(!category || !form) return null;
 
+  const tagCode = normalizeStr(raw.tag || raw.code || metaRaw.tag || metaRaw.code || metaLayout.tag || metaLayout.code || '');
+
   const lastEditedISO = normalizeStr(
     raw.lastEditedISO ||
     raw.lastEdited ||
@@ -390,9 +471,46 @@ function normalizeImportedRecord(raw){
     category,
     form,
     lastEditedISO,
-    fingerprint: computeFingerprint(category, form, lastEditedISO, raw),
+    fingerprint: (tagCode ? tagCode : computeFingerprint(category, form, lastEditedISO, raw)),
     raw
   };
+}
+
+/**
+ * Adaptación:
+ * - UI trabaja con registros "inspecciones" {id, category, form, lastEditedISO, fingerprint, raw}
+ * - Firestore guarda "templates" {id, name, category, code, createdAt, updatedAt, data}
+ * Mapeamos:
+ *   name = form
+ *   code = fingerprint (TAG/código)
+ *   data = raw (objeto serializado que ya existía)
+ */
+function recordToTemplate(rec, existingTpl){
+  const id = normalizeStr(rec?.id) || normalizeStr(existingTpl?.id) || makeId();
+  const createdAt = normalizeStr(existingTpl?.createdAt) || nowISO();
+  const updatedAt = nowISO();
+  const category = normalizeStr(rec?.category || existingTpl?.category || '');
+  const name = normalizeStr(rec?.form || existingTpl?.name || '');
+  const code = normalizeStr(rec?.fingerprint || existingTpl?.code || '');
+  const data = (rec && rec.raw && typeof rec.raw === 'object') ? rec.raw : ((existingTpl && existingTpl.data && typeof existingTpl.data === 'object') ? existingTpl.data : (rec?.raw || rec || {}));
+
+  return { id, name, category, code, createdAt, updatedAt, data };
+}
+
+function templateToRecord(tpl){
+  const id = normalizeStr(tpl?.id) || makeId();
+  const category = normalizeStr(tpl?.category || '');
+  const form = normalizeStr(tpl?.name || '');
+  const fingerprint = normalizeStr(tpl?.code || '');
+  const raw = (tpl && tpl.data && typeof tpl.data === 'object') ? tpl.data : {};
+
+  // lastEditedISO: si viene en data, úsalo; si no, usa updatedAt (o createdAt)
+  const lastEditedISO =
+    normalizeStr(raw?.lastEditedISO || raw?.lastEdited) ||
+    normalizeStr(tpl?.updatedAt || tpl?.createdAt) ||
+    nowISO();
+
+  return { id, category, form, lastEditedISO, fingerprint, raw };
 }
 
 function ensureDbShape(items){
@@ -402,48 +520,39 @@ function ensureDbShape(items){
   for(const it of (Array.isArray(items) ? items : [])){
     if(!it || typeof it !== 'object') continue;
 
-    if(!('category' in it) && !('form' in it) && !('raw' in it)){
-      const wrapped = normalizeImportedRecord(it);
-      if(wrapped){ out.push(wrapped); changed = true; }
+    // Si ya viene con forma de record (tiene category/form/raw), pásalo
+    if(('category' in it) || ('form' in it) || ('raw' in it)){
+      const obj = { ...it };
+
+      if(!obj.id){ obj.id = makeId(); changed = true; }
+
+      if(!obj.raw){
+        const snap = { ...obj };
+        delete snap.raw;
+        obj.raw = snap;
+        changed = true;
+      }
+
+      if(!obj.lastEditedISO){
+        obj.lastEditedISO = nowISO();
+        changed = true;
+      }
+
+      if(!obj.fingerprint){
+        obj.fingerprint = computeFingerprint(obj.category || '', obj.form || '', obj.lastEditedISO || '', obj.raw || obj);
+        changed = true;
+      }
+
+      out.push(obj);
       continue;
     }
 
-    const obj = it;
-
-    if(!obj.id){ obj.id = makeId(); changed = true; }
-
-    if(!obj.raw){
-      const snap = { ...obj };
-      delete snap.raw;
-      obj.raw = snap;
-      changed = true;
-    }
-
-    if((!obj.category || !obj.form) && obj.raw){
-      const rec = normalizeImportedRecord(obj.raw);
-      if(rec){
-        obj.category = obj.category || rec.category;
-        obj.form = obj.form || rec.form;
-        obj.lastEditedISO = obj.lastEditedISO || rec.lastEditedISO;
-        if(!obj.fingerprint) obj.fingerprint = rec.fingerprint;
-        changed = true;
-      }
-    }
-
-    if(!obj.lastEditedISO){
-      obj.lastEditedISO = nowISO();
-      changed = true;
-    }
-
-    if(!obj.fingerprint){
-      obj.fingerprint = computeFingerprint(obj.category || '', obj.form || '', obj.lastEditedISO || '', obj.raw || obj);
-      changed = true;
-    }
-
-    out.push(obj);
+    // Si es un objeto "layout" o export, intenta normalizar
+    const wrapped = normalizeImportedRecord(it);
+    if(wrapped){ out.push(wrapped); changed = true; }
   }
 
-  // ✅ Deduplicación defensiva (por si en el pasado se importaron duplicados)
+  // Deduplicación defensiva por fingerprint (code)
   const seen = new Set();
   const unique = [];
   for(const it of out){
@@ -456,31 +565,275 @@ function ensureDbShape(items){
   return { items: unique, changed };
 }
 
-function loadDB(){
-  let parsed = [];
+/* =========================
+   4) Operaciones Firestore
+   ========================= */
+
+function assertFirestoreReady(){
+  if(!__fire.db || !__fire.col) throw new Error('Firestore no inicializado.');
+}
+
+/**
+ * fetchAllTemplates(): leer todos los docs de "templates_v1"
+ */
+async function fetchAllInspections(){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  const snap = await __fire.db.collection(INS_COLLECTION).get();
+  const out = [];
+  snap.forEach(doc=>{
+    const d = doc.data() || {};
+    if(!d.id) d.id = doc.id;
+    out.push(d);
+  });
+  return out;
+}
+/**
+ * fetchLatestInspections(limit): carga últimas N inspecciones (orden por updatedAt/createdAt si existe)
+ */
+async function fetchLatestInspections(limit){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  const lim = Math.max(1, Number(limit||200));
+  // Preferimos updatedAt/createdAt si existen (strings ISO). Si no, caemos a get() simple.
   try{
-    const raw = localStorage.getItem(DB_KEY);
-    parsed = raw ? JSON.parse(raw) : [];
+    return await __fire.db.collection(INS_COLLECTION).orderBy('updatedAt', 'desc').limit(lim).get()
+      .then(snap=>{
+        const out=[]; snap.forEach(doc=>{ const d=doc.data()||{}; if(!d.id) d.id=doc.id; out.push(d);}); return out;
+      });
+  }catch(e1){
+    try{
+      return await __fire.db.collection(INS_COLLECTION).orderBy('createdAt', 'desc').limit(lim).get()
+        .then(snap=>{
+          const out=[]; snap.forEach(doc=>{ const d=doc.data()||{}; if(!d.id) d.id=doc.id; out.push(d);}); return out;
+        });
+    }catch(e2){
+      // fallback
+      return await fetchAllInspections();
+    }
+  }
+}
+
+/**
+ * fetchInspectionsByCode(code): búsqueda exacta por TAG/código
+ */
+async function fetchInspectionsByCode(code){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  const c = String(code||'').trim();
+  if(!c) return [];
+  const snap = await __fire.db.collection(INS_COLLECTION).where('code', '==', c).get();
+  const out = [];
+  snap.forEach(doc=>{
+    const d = doc.data() || {};
+    if(!d.id) d.id = doc.id;
+    out.push(d);
+  });
+  return out;
+}
+
+
+/**
+ * upsertTemplate(tpl): set(doc).merge(true) con payload anterior
+ */
+async function upsertInspectionRaw(raw){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  if(!raw || typeof raw !== 'object') throw new Error('invalid_payload');
+  const id = String(raw.id || makeId());
+  const payload = { ...raw, id, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+  await __fire.db.collection(INS_COLLECTION).doc(id).set(payload, { merge:true });
+  return id;
+}
+
+/**
+ * deleteTemplate(id): borrar doc
+ */
+async function deleteInspection(id){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  await __fire.db.collection(INS_COLLECTION).doc(String(id)).delete();
+  return true;
+}
+
+/**
+ * deleteAllTemplates(): borrar todos los docs (batch)
+ * (en chunks de 450 para ir holgados bajo el límite de 500)
+ */
+async function deleteAllInspections(){
+  if(!__fire.db) throw new Error('Firestore no inicializado.');
+  const snap = await __fire.db.collection(INS_COLLECTION).get();
+  const docs = [];
+  snap.forEach(d=>docs.push(d));
+  let i = 0;
+  while(i < docs.length){
+    const chunk = docs.slice(i, i+400);
+    const batch = __fire.db.batch();
+    for(const d of chunk) batch.delete(d.ref);
+    await batch.commit();
+    i += chunk.length;
+  }
+  return true;
+}
+
+/**
+ * findByCode(code): query where('code','==',code).limit(1)
+ */
+async function findByCode(code){
+  assertFirestoreReady();
+  const c = normalizeStr(code);
+  if(!c) return null;
+  const q = await __fire.col.where('code', '==', c).limit(1).get();
+  if(q.empty) return null;
+  const doc = q.docs[0];
+  return { id: doc.id, ...(doc.data() || {}) };
+}
+
+/* =========================
+   UI + Lógica (sin localStorage)
+   ========================= */
+
+async function loadDB(){
+  // la fuente de verdad es Firestore (inspecciones)
+  const rows = await fetchLatestInspections(200);
+  const records = [];
+  for(const raw of rows){
+    const rec = normalizeImportedRecord((raw && raw.data && typeof raw.data==='object') ? raw.data : raw);
+    if(rec){
+      rec.id = String(raw.id || rec.id);
+      if(raw.fingerprint) rec.fingerprint = String(raw.fingerprint);
+      records.push(rec);
+    }
+  }
+  const shaped = ensureDbShape(records);
+  __dbCache = shaped.items;
+  __cacheLoaded = true;
+  return __dbCache;
+}
+
+function getCache(){
+  return Array.isArray(__dbCache) ? __dbCache : [];
+}
+
+async function refreshCache(){
+  await loadDB();
+}
+
+/**
+ * Cargar todas las inspecciones (Firestore) y permitir filtrado local completo.
+ * Ojo: si hay MUCHAS, puede tardar.
+ */
+async function loadAllFromCloud(){
+  if(!confirm('Esto cargará TODAS las inspecciones desde Firestore (puede tardar). ¿Continuar?')) return;
+  const wrap = document.getElementById('histList');
+  try{
+    if(wrap){
+      wrap.innerHTML = '<div class="histEmpty">Cargando todas desde Firestore…</div>';
+    }
+    const rows = await fetchAllInspections();
+    const records = [];
+    for(const raw of rows){
+      const rec = normalizeImportedRecord((raw && raw.data && typeof raw.data==='object') ? raw.data : raw);
+      if(rec){
+        rec.id = String(raw.id || rec.id);
+        records.push(rec);
+      }
+    }
+    __dbCache = ensureDbShape(records).items;
+    __cacheLoaded = true;
+    __loadedAll = true;
+    __page = 1;
+    refreshCategoryOptions();
+    await renderList();
   }catch(e){
-    parsed = [];
+    console.error(e);
+    alert('No se pudo cargar todo.\n' + (e && (e.message||e.toString()) ? (e.message||e.toString()) : ''));
   }
-
-  const shaped = ensureDbShape(parsed);
-  if(shaped.changed){
-    try{ localStorage.setItem(DB_KEY, JSON.stringify(shaped.items)); }catch(e){}
-  }
-  return shaped.items;
-}
-function saveDB(items){
-  try{ localStorage.setItem(DB_KEY, JSON.stringify(items || [])); }catch(e){}
 }
 
-function clearDB(){
-  if(!confirm('¿Vaciar por completo la base de datos local?')) return;
-  saveDB([]);
-  __page = 1;
-  refreshCategoryOptions();
-  renderList();
+/**
+ * Buscar por TAG/código (exacto) en Firestore.
+ * Si no encuentra y no se ha cargado todo, ofrece cargar todo y filtrar por texto.
+ */
+async function runSearch(){
+  const q = String((document.getElementById('histSearch')||{}).value || '').trim();
+  if(!q){
+    // si no hay query, vuelve a "últimas"
+    __cacheLoaded = false;
+    __loadedAll = false;
+    __page = 1;
+    await renderList();
+    return;
+  }
+
+  const wrap = document.getElementById('histList');
+  try{
+    if(wrap){
+      wrap.innerHTML = '<div class="histEmpty">Buscando en Firestore…</div>';
+    }
+
+    // 1) Búsqueda exacta (rápida)
+    const rows = await fetchInspectionsByCode(q);
+
+    if(rows && rows.length){
+      const records = [];
+      for(const raw of rows){
+        const rec = normalizeImportedRecord((raw && raw.data && typeof raw.data==='object') ? raw.data : raw);
+        if(rec){
+          rec.id = String(raw.id || rec.id);
+          records.push(rec);
+        }
+      }
+      __dbCache = ensureDbShape(records).items;
+      __cacheLoaded = true;
+      __page = 1;
+      refreshCategoryOptions();
+      await renderList();
+      return;
+    }
+
+    // 2) Si no hay resultados, y no hemos cargado todo, hacemos fallback a "últimas 200" y filtrado local por texto
+    if(!__loadedAll){
+      const latest = await fetchLatestInspections(200);
+      const records = [];
+      for(const raw of latest){
+        const rec = normalizeImportedRecord((raw && raw.data && typeof raw.data==='object') ? raw.data : raw);
+        if(rec){
+          rec.id = String(raw.id || rec.id);
+          records.push(rec);
+        }
+      }
+      __dbCache = ensureDbShape(records).items;
+      __cacheLoaded = true;
+      __page = 1;
+      refreshCategoryOptions();
+      await renderList(); // applyFilters ya usa histSearch
+      // si aún así no aparece, sugerimos cargar todo
+      const filtered = applyFilters(getCache());
+      if(!filtered.length){
+        if(confirm('No se encontró nada por código exacto ni en las últimas 200. ¿Quieres CARGAR TODAS para buscar por texto en todo el histórico?')){
+          await loadAllFromCloud();
+        }
+      }
+      return;
+    }
+
+    // 3) Ya estaba cargado todo y no apareció: render normal (applyFilters mostrará vacío)
+    await renderList();
+  }catch(e){
+    console.error(e);
+    alert('No se pudo buscar.\n' + (e && (e.message||e.toString()) ? (e.message||e.toString()) : ''));
+  }
+}
+
+
+async function clearDB(){
+  if(!confirm('¿Vaciar por completo la base de datos en la nube (Firestore)?')) return;
+  try{
+    await deleteAllInspections();
+    __page = 1;
+    await refreshCache();
+    refreshCategoryOptions();
+    await renderList();
+  }catch(e){
+    console.error(e);
+    alert('No se pudo vaciar la base de datos.');
+  }
 }
 
 function parseDateSafe(v){
@@ -504,6 +857,7 @@ function formatDateDDMMYYYY_HHMM(input){
 
 function resetToFirstPageAndRender(){
   __page = 1;
+  // renderList ya usa cache; si quieres reflejar cambios remotos, recarga:
   renderList();
 }
 
@@ -522,7 +876,7 @@ function refreshCategoryOptions(){
   if(!sel) return;
 
   const current = sel.value || '';
-  const db = loadDB();
+  const db = getCache();
   const cats = [...new Set(db.map(x => normalizeStr(x?.category)).filter(Boolean))]
     .sort((a,b)=> a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
@@ -553,6 +907,7 @@ function applyFilters(db){
 
     if(q){
       try{
+        // Incluye fingerprint (TAG/código) y raw
         if(!JSON.stringify(e).toLowerCase().includes(q)) return false;
       }catch(err){}
     }
@@ -576,10 +931,32 @@ function applyFilters(db){
   });
 }
 
-function renderList(){
+async function renderList(){
   const wrap = document.getElementById('histList');
-  const db = loadDB();
+  if(!wrap) return;
 
+  // Si aún no cargó cache, cárgala (Firestore)
+  if(!__cacheLoaded){
+    wrap.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'histEmpty';
+    div.textContent = 'Conectando a Firestore…';
+    wrap.appendChild(div);
+
+    try{
+      await refreshCache();
+    }catch(e){
+      console.error(e);
+      wrap.innerHTML = '';
+      const err = document.createElement('div');
+      err.className = 'histEmpty';
+      err.textContent = 'No se pudo conectar a Firestore. Revisa la conexión y la configuración.';
+      wrap.appendChild(err);
+      return;
+    }
+  }
+
+  const db = getCache();
   refreshCategoryOptions();
 
   const filtered = applyFilters(db);
@@ -589,7 +966,7 @@ function renderList(){
     const div = document.createElement('div');
     div.className = 'histEmpty';
     div.textContent = db.length === 0
-      ? 'Importa uno o varios JSON para comenzar.'
+      ? 'No hay inspecciones guardadas todavía.'
       : 'No hay inspecciones que coincidan con los filtros.';
     wrap.appendChild(div);
     return;
@@ -659,6 +1036,12 @@ function setPage(p){
   renderList();
 }
 
+/**
+ * Importar JSON:
+ * - Normaliza registros como antes
+ * - Guarda cada registro como template en Firestore (upsert)
+ * - (Opcional) evita duplicados por TAG/código (code = fingerprint) consultando cache
+ */
 function importJsonFiles(){
   const inp = document.createElement('input');
   inp.type = 'file';
@@ -667,33 +1050,73 @@ function importJsonFiles(){
 
   inp.onchange = async ()=>{
     const files = [...(inp.files || [])];
-    const db = loadDB();
+
+    // Asegura cache para dedupe por fingerprint (code)
+    try{
+      if(!__cacheLoaded) await refreshCache();
+    }catch(e){}
+
+    const db = getCache();
     const seen = new Set(db.map(x=>String(x?.fingerprint||'')).filter(Boolean));
+
+    let importedCount = 0;
 
     for(const f of files){
       try{
         const txt = await f.text();
         const obj = JSON.parse(txt);
 
-        // ✅ MODIFICADO: soporta export del Inspector con múltiples inspecciones en un solo archivo
+        // Soporta export del Inspector con múltiples inspecciones en un solo archivo
         if(obj && typeof obj === 'object' && obj.format === 'inspector_inspections_v1' && Array.isArray(obj.inspections)){
           for(const one of obj.inspections){
             const rec = normalizeImportedRecord(one);
-            if(rec && rec.fingerprint && !seen.has(String(rec.fingerprint))){ db.push(rec); seen.add(String(rec.fingerprint)); }
+            if(rec && rec.fingerprint && !seen.has(String(rec.fingerprint))){
+              // upsert a Firestore
+              rec.id = rec.id || makeId();
+              const tpl = recordToTemplate(rec, null);
+
+              // Si ya existe por code, reutiliza su docId para merge
+              const existing = await findByCode(tpl.code);
+              if(existing && existing.id){
+                tpl.id = existing.id;
+                tpl.createdAt = existing.createdAt || tpl.createdAt;
+              }
+
+              await upsertInspectionRaw(tpl);
+              seen.add(String(rec.fingerprint));
+              importedCount++;
+            }
           }
           continue;
         }
 
         // Caso normal: un JSON = un registro
         const rec = normalizeImportedRecord(obj);
-        if(rec && rec.fingerprint && !seen.has(String(rec.fingerprint))){ db.push(rec); seen.add(String(rec.fingerprint)); }
+        if(rec && rec.fingerprint && !seen.has(String(rec.fingerprint))){
+          rec.id = rec.id || makeId();
+          const tpl = recordToTemplate(rec, null);
+
+          const existing = await findByCode(tpl.code);
+          if(existing && existing.id){
+            tpl.id = existing.id;
+            tpl.createdAt = existing.createdAt || tpl.createdAt;
+          }
+
+          await upsertInspectionRaw(tpl);
+          seen.add(String(rec.fingerprint));
+          importedCount++;
+        }
       }catch(e){}
     }
 
-    saveDB(db);
+    await refreshCache();
     __page = 1;
     refreshCategoryOptions();
-    renderList();
+    await renderList();
+
+    if(importedCount === 0){
+      alert('No se importaron nuevos registros (puede que ya existan por TAG/código).');
+    }
   };
 
   inp.click();
@@ -1205,8 +1628,19 @@ async function getExportFrame(){
 }
 
 async function exportRecordPDF(id){
-  const db = loadDB();
-  const rec = db.find(x => x && x.id === id);
+  // Usa cache; si no existe, intenta buscar en Firestore directo
+  let rec = getCache().find(x => x && x.id === id);
+
+  if(!rec){
+    try{
+      assertFirestoreReady();
+      const doc = await __fire.col.doc(String(id)).get();
+      if(doc.exists){
+        rec = templateToRecord({ id: doc.id, ...(doc.data() || {}) });
+      }
+    }catch(e){}
+  }
+
   if(!rec){
     alert('No se encontró el registro.');
     return;
@@ -1243,9 +1677,92 @@ function goHome(){
   window.location.href = "index.html";
 }
 
+/* =========================
+   5) Buscar por TAG/código (Firestore)
+   =========================
+   Este helper NO cambia la UI existente; si quieres usarlo desde consola:
+   await window.findAndFocusByCode('abcd1234');
+*/
+window.findAndFocusByCode = async function(code){
+  try{
+    const tpl = await findByCode(code);
+    if(!tpl){
+      alert('No se encontró ninguna inspección con ese TAG/código.');
+      return null;
+    }
+    const rec = templateToRecord(tpl);
+
+    // Carga/actualiza cache y centra el filtro rápido en el código
+    await refreshCache();
+    document.getElementById('histSearch').value = String(code);
+    __page = 1;
+    await renderList();
+    return rec;
+  }catch(e){
+    console.error(e);
+    alert('No se pudo buscar por TAG/código.');
+    return null;
+  }
+};
+
+/* =========================
+   Firebase init + arranque
+   ========================= */
+async function initFirestore(){
+  try{
+    if(!firebase.apps || !firebase.apps.length){
+      __fire.app = firebase.initializeApp(firebaseConfig);
+    }else{
+      __fire.app = firebase.app();
+    }
+    __fire.db = firebase.firestore();
+    __fire.col = __fire.db.collection(COLLECTION_NAME);
+  }catch(e){
+    console.error(e);
+    throw e;
+  }
+}
+
+async function initApp(){
+  await initFirestore();
+  await renderList();
+
+  // Enter en búsqueda rápida => buscar
+  const hs = document.getElementById('histSearch');
+  if(hs){
+    hs.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Enter'){ ev.preventDefault(); runSearch(); }
+    });
+  }
+}
+
 // Init
-refreshCategoryOptions();
-renderList();
+initApp();
+
+
+function exportJSON(){
+  alert('Modo nube: la base de datos lee directamente desde Firestore.\n\nSi necesitas una copia, usa la exportación PDF o añade una función de backup server-side.');
+}
+function importJsonFiles(){
+  alert('Modo nube: no se importan JSON locales.\n\nLa fuente de verdad es Firestore.');
+}
+
+function clearAll(){
+  // compat: algunos botones/atajos llaman clearAll
+  return clearDB();
+}
+
+// --- Bindings explícitos para botones inline (robustez) ---
+try{
+  window.refreshCache = refreshCache;
+  window.runSearch = runSearch;
+  window.loadAllFromCloud = loadAllFromCloud;
+  window.clearDB = clearDB;
+  window.clearAll = clearAll;
+  window.exportJSON = exportJSON;
+  window.importJsonFiles = importJsonFiles;
+}catch(e){ console.error(e); }
+
 </script>
 </body>
 </html>

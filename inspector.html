@@ -488,6 +488,10 @@
     .photos-toolbar{ display:none !important; }
   }
 </style>
+
+<!-- Firebase (compat, sin bundler) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 </head>
 
 <body>
@@ -497,7 +501,7 @@
     <div class="group">
       <button class="btn primary" type="button" onclick="importJsonFiles()">Importar JSON(s)</button>
       <button id="btnExportPDF" class="btn" type="button" onclick="exportPDF()" disabled>Exportar PDF</button>
-      <button id="btnExportJSON" class="btn" type="button" onclick="exportAllInspectionsForDB()" disabled>Exportar JSON (BBDD)</button>
+      <button id="btnExportJSON" class="btn" type="button" onclick="exportCloudInfoBBDD()" disabled>Exportar JSON (BBDD)</button>
       <button id="btnSaveInspection" class="btn" type="button" onclick="saveCurrentInspection()" disabled>Guardar inspección</button>
       <button id="btnResetForm" class="btn" type="button" onclick="resetCurrentForm()" disabled>Reiniciar formulario</button>
     </div>
@@ -535,6 +539,164 @@
 </div>
 
 <script>
+/* __GLOBAL_ERROR_WIRED__ */
+let __shownGlobalErr = false;
+function __showGlobalErr(prefix, err){
+  try{
+    console.error(prefix, err);
+    if(__shownGlobalErr) return;
+    __shownGlobalErr = true;
+    alert(prefix + ': ' + ((err && (err.message||err.code)) ? (err.code? (err.code+': '):'') + err.message : String(err)));
+  }catch(_){}
+}
+window.addEventListener('error', (e)=>__showGlobalErr('Error JS', e.error || e.message));
+window.addEventListener('unhandledrejection', (e)=>__showGlobalErr('Promesa rechazada', e.reason));
+
+
+/* __FS_HELPERS_GLOBAL__ */
+
+  // ===== Helpers Firestore (errores) =====
+  function fsErrShort(e){
+    try{
+      const code = e && (e.code || e.name) ? String(e.code || e.name) : '';
+      const msg = e && e.message ? String(e.message) : String(e||'');
+      const out = (code && msg) ? (code + ' — ' + msg) : (code || msg);
+      return out.trim() || 'error';
+    }catch(_){ return 'error'; }
+  }
+  function fsRulesHint(e){
+    const s = (e && (e.code || '') ? String(e.code) : '') + ' ' + (e && e.message ? String(e.message) : '');
+    if(/permission-denied/i.test(s)){
+      return "\n\nPermisos Firestore: abre Rules temporalmente o añade Auth (sin login, por defecto bloquea).";
+    }
+    if(/failed-precondition/i.test(s) && /index/i.test(s)){
+      return "\n\nFalta un índice compuesto (Firestore -> Indexes).";
+    }
+    if(/unavailable|network|offline|fetch/i.test(s)){
+      return "\n\nProblema de red/bloqueo del navegador.";
+    }
+    return "";
+  }
+
+
+  /* ===== Firebase (Cloud Firestore) ===== */
+  const firebaseConfig = {
+    apiKey: "AIzaSyBLP0yGc_Yh0nKGNYbPcYabTg25LDw2wco",
+    authDomain: "inspector-b4f41.firebaseapp.com",
+    projectId: "inspector-b4f41",
+    storageBucket: "inspector-b4f41.firebasestorage.app",
+    messagingSenderId: "333394046622",
+    appId: "1:333394046622:web:caa18c6f1d341b0a97158f"
+  };
+
+  const TPL_COLLECTION = 'templates_v1';
+  const INS_COLLECTION = 'inspections_v1';
+
+  let __firebaseApp = null;
+  let __fs = null;
+
+  function initFirebase(){
+    try{
+      if(!window.firebase) return false;
+      if(!firebase.apps || !firebase.apps.length){
+        __firebaseApp = firebase.initializeApp(firebaseConfig);
+      }else{
+        __firebaseApp = firebase.app();
+      }
+
+  function fsErrShort(e){
+    try{
+      const code = e && (e.code || e.name) ? String(e.code || e.name) : '';
+      const msg = e && e.message ? String(e.message) : String(e||'');
+      const out = (code && msg) ? (code + ' — ' + msg) : (code || msg);
+      return out.trim() || 'error';
+    }catch(_){ return 'error'; }
+  }
+  function fsRulesHint(e){
+    const s = (e && (e.code || '') ? String(e.code) : '') + ' ' + (e && e.message ? String(e.message) : '');
+    if(/permission-denied/i.test(s)){
+      return "\n\nParece un problema de REGLAS: si no usas login, Firestore debe permitir lecturas/escrituras públicas (o habilitar Auth).";
+    }
+    if(/failed-precondition/i.test(s) && /index/i.test(s)){
+      return "\n\nParece faltar un índice compuesto en Firestore (consola -> Firestore -> Indexes).";
+    }
+    if(/unavailable|network|offline|fetch/i.test(s)){
+      return "\n\nParece un problema de conexión/red o bloqueo del navegador.";
+    }
+    return "";
+  }
+
+      __fs = firebase.firestore();
+      return true;
+    }catch(e){
+      console.error(e);
+      __fs = null;
+      return false;
+    }
+  }
+  function cloudReady(){ return !!__fs; }
+
+  async function cloudFetchAllTemplates(){
+    if(!cloudReady()) return [];
+    const snap = await __fs.collection(TPL_COLLECTION).get();
+    const arr = [];
+    snap.forEach(doc=>{
+      const d = doc.data() || {};
+      const data = (d.data && typeof d.data === 'object') ? d.data : null;
+      if(!data) return;
+      arr.push({
+        id: doc.id,
+        name: String(d.name || ''),
+        category: String(d.category || ''),
+        code: String(d.code || ''),
+        createdAt: d.createdAt ? String(d.createdAt) : '',
+        updatedAt: d.updatedAt ? String(d.updatedAt) : '',
+        data
+      });
+    });
+    return arr.filter(t=>t.id && t.name && t.category && t.data);
+  }
+
+  async function cloudFindTemplateByCode(code){
+    if(!cloudReady()) return null;
+    const c = normalize(code);
+    if(!c) return null;
+    const qs = await __fs.collection(TPL_COLLECTION).where('code','==',c).limit(1).get();
+    if(qs.empty) return null;
+    const doc = qs.docs[0];
+    const d = doc.data() || {};
+    const data = (d.data && typeof d.data === 'object') ? d.data : null;
+    if(!data) return null;
+    return {
+      id: doc.id,
+      name: String(d.name || ''),
+      category: String(d.category || ''),
+      code: String(d.code || ''),
+      createdAt: d.createdAt ? String(d.createdAt) : '',
+      updatedAt: d.updatedAt ? String(d.updatedAt) : '',
+      data
+    };
+  }
+
+  async function cloudSaveInspectionDoc(payload){
+    if(!cloudReady()) throw new Error('Firestore no está inicializado.');
+    const id = String(payload.id || makeId());
+    await __fs.collection(INS_COLLECTION).doc(id).set(payload, { merge:true });
+    return id;
+  }
+
+  async function cloudFetchAllInspections(){
+    if(!cloudReady()) return [];
+    const snap = await __fs.collection(INS_COLLECTION).get();
+    const arr = [];
+    snap.forEach(doc=>{
+      const d = doc.data() || {};
+      arr.push({ id: doc.id, ...d });
+    });
+    return arr;
+  }
+
+
   const FIXED_LOGO_URL = 'https://i.ibb.co/BK6jvxPG/image.png';
 
   const PHOTO_MAX_EDGE = 1600;
@@ -555,19 +717,72 @@
 
   let lastOpenedTag = '';
 
-  const STORAGE_KEY = 'inspector_persist_v1';
-  const INSPECTIONS_KEY = 'inspector_inspections_v1';
+  const STORAGE_KEY = null;
+  const INSPECTIONS_KEY = null;
+
   const inspections = [];
 
-  function safeLSSet(key, value){
-    try{ localStorage.setItem(key, value); return true; }catch(e){ return false; }
+  async function loadInspections(){
+    inspections.length = 0;
+    if(!cloudReady()) return false;
+    try{
+      const rows = await cloudFetchAllInspections();
+      rows.sort((a,b)=> String(b.updatedAt||b.savedAtISO||'').localeCompare(String(a.updatedAt||a.savedAtISO||'')));
+      for(const d of rows){
+        // Soportar inspecciones guardadas como {name,category,code,data:ins}
+        const ins = (d && d.data && typeof d.data === 'object') ? d.data : d;
+        if(!ins || typeof ins !== 'object') continue;
+        if(!ins.id || !ins.data) continue;
+        inspections.push(ins);
+      }
+      return true;
+    }catch(e){
+      console.error(e);
+      return false;
+    }
   }
-  function safeLSGet(key){
-    try{ return localStorage.getItem(key); }catch(e){ return null; }
+
+  function saveInspections(){
+    // Persistir inspecciones en Firestore (fuente de verdad)
+    if(!cloudReady()) return;
+    // Sincroniza solo las nuevas inspecciones añadidas desde la última sync
+    if(typeof window.__insLastSyncedIndex !== 'number') window.__insLastSyncedIndex = 0;
+    if(window.__insSyncInFlight) return;
+    const start = Math.max(0, window.__insLastSyncedIndex|0);
+    const pending = inspections.slice(start);
+    if(!pending.length) return;
+
+    window.__insSyncInFlight = true;
+    (async ()=>{
+      // chunk defensivo (batch limit 500)
+      let i = 0;
+      while(i < pending.length){
+        const chunk = pending.slice(i, i+400);
+        const batch = __fs.batch();
+        for(const ins of chunk){
+          if(!ins || typeof ins !== 'object' || !ins.id) continue;
+          const payload = {
+            ...ins,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          };
+          const ref = __fs.collection(INS_COLLECTION).doc(String(ins.id));
+          batch.set(ref, payload, { merge:true });
+        }
+        await batch.commit();
+        i += chunk.length;
+      }
+      window.__insLastSyncedIndex = inspections.length;
+    })().catch(e=>{
+      console.error(e);
+      alert('No se pudo guardar en Firestore. ' + fsErrShort(e) + (fsRulesHint(e) ? ('\n' + fsRulesHint(e)) : ''));
+    }).finally(()=>{
+      window.__insSyncInFlight = false;
+    });
   }
-  function safeLSRemove(key){
-    try{ localStorage.removeItem(key); return true; }catch(e){ return false; }
-  }
+
+  function safeLSSet(key, value){ return false; }
+  function safeLSGet(key){ return null; }
+  function safeLSRemove(key){ return false; }
 
   function serializeState(){
     return {
@@ -591,35 +806,59 @@
     return true;
   }
 
-  function loadState(){
-    const raw = safeLSGet(STORAGE_KEY);
-    if(!raw) return false;
 
-    const parsed = safeJSONParse(raw);
-    if(!parsed || typeof parsed !== 'object') return false;
-
-    if(Array.isArray(parsed.db)){
+  async function loadTemplatesFromCloud(){
+    if(!cloudReady()) return false;
+    try{
+      const templates = await cloudFetchAllTemplates();
       db.length = 0;
-      for(const t of parsed.db){
-        if(validateTemplate(t)) db.push(t);
+      for(const t of templates){
+        const layout = (t.data && typeof t.data === 'object') ? deepClone(t.data) : null;
+        if(!layout) continue;
+        layout.header = (layout.header && typeof layout.header==='object') ? layout.header : {};
+        layout.theme = (layout.theme && typeof layout.theme==='object') ? layout.theme : {};
+        layout.fields = Array.isArray(layout.fields) ? layout.fields : [];
+        layout.header.logo = FIXED_LOGO_URL;
+
+        // Normaliza campos de fotos para evitar nulls
+        for(const f of layout.fields){
+          if(f && normalize(f.type)==='photos'){
+            f.config = (f.config && typeof f.config==='object') ? f.config : {};
+            const slots = getPhotoSlotsForField(f);
+            f.images = Array.isArray(f.images) ? f.images : [];
+            f.images = f.images.slice(0, slots);
+            while(f.images.length < slots) f.images.push(null);
+          }
+        }
+
+        const tags = [];
+        const code = normalize(t.code || '');
+        if(code) tags.push(code);
+
+        db.push({
+          id: String(t.id),
+          category: normalize(t.category),
+          form: normalize(t.name),
+          tags,
+          baseData: deepClone(layout),
+          data: deepClone(layout)
+        });
       }
+      return true;
+    }catch(e){
+      console.error(e);
+      return false;
     }
+  }
 
-    currentId = parsed.currentId || null;
-    lastEditedISO = parsed.lastEditedISO || null;
-    lastNFCTag = parsed.lastNFCTag || '';
-    lastNFCTimeISO = parsed.lastNFCTimeISO || null;
-    lastOpenedTag = parsed.lastOpenedTag || '';
 
-    return true;
+  function loadState(){
+    // Fuente de verdad: Firestore. No persistimos en local.
+    return false;
   }
 
   function saveState(){
-    const payload = serializeState();
-    try{
-      const txt = JSON.stringify(payload);
-      safeLSSet(STORAGE_KEY, txt);
-    }catch(e){}
+    // no-op (sin localStorage)
   }
 
   function serializeInspection(item){
@@ -647,26 +886,7 @@
     };
   }
 
-  function loadInspections(){
-    const raw = safeLSGet(INSPECTIONS_KEY);
-    if(!raw) return false;
-    const parsed = safeJSONParse(raw);
-    if(!parsed || typeof parsed !== 'object') return false;
-    const list = Array.isArray(parsed.inspections) ? parsed.inspections : (Array.isArray(parsed) ? parsed : []);
-    inspections.length = 0;
-    for(const it of list){
-      if(!it || typeof it !== 'object') continue;
-      if(!it.id || !it.data) continue;
-      inspections.push(it);
-    }
-    return true;
-  }
-
-  function saveInspections(){
-    try{
-      safeLSSet(INSPECTIONS_KEY, JSON.stringify({ v: 1, savedAt: nowISO(), inspections }));
-    }catch(e){}
-  }
+  
 
   function escapeHTML(str){
     return String(str ?? '').replace(/[&<>"']/g, m=>({
@@ -832,9 +1052,16 @@
     document.title = oldTitle;
   }
 
-  // ✅ MODIFICADO: al guardar, se guarda y se reinicia el formulario automáticamente.
+  
+  // ===== Modo nube: botones legacy (sin export/import local) =====
+  function exportCloudInfoBBDD(){
+    alert('Modo nube: la Base de datos lee directamente desde Firestore.\n\nNo hace falta exportar/importar JSON.');
+  }
+
+
+// ✅ MODIFICADO: al guardar, se guarda y se reinicia el formulario automáticamente.
   // Guardar el mismo formulario varias veces => varias inspecciones distintas (id nuevo cada vez).
-  function saveCurrentInspection(){
+  async function saveCurrentInspection(){
     const item = getCurrentItem();
     if(!item || !item.data){
       alert('No hay formulario abierto.');
@@ -842,9 +1069,34 @@
     }
 
     const ins = serializeInspection(item);
-    inspections.push(ins);
-    saveInspections();
 
+    // Persistir en Firestore (fuente de verdad)
+    if(cloudReady()){
+      try{
+        const payload = {
+  // duplicados para búsquedas rápidas en Firestore
+  category: String(ins.category || ''),
+  code: String(ins.tag || ''),
+  tag: String(ins.tag || ''),
+  createdAt: String(ins.savedAtISO || nowISO()),
+  updatedAt: String(ins.lastEditedISO || ins.savedAtISO || nowISO()),
+  // el documento guarda la inspección con la MISMA forma que antes
+  ...ins
+};
+        await cloudSaveInspectionDoc({ id: ins.id, ...payload });
+      }catch(e){
+        console.error(e);
+        alert('No se pudo guardar en Firestore.\n' + fsErrShort(e) + fsRulesHint(e));
+        return;
+      }
+    }else{
+      alert('Firestore no está disponible. No se guardará la inspección.');
+      return;
+    }
+
+    // Mantener cache en memoria (para exportar JSON si quieres)
+    inspections.push(ins);
+    
     // Reinicio inmediato del formulario (sin confirmación)
     resetCurrentForm({ silent: true });
 
@@ -1324,7 +1576,7 @@
     saveState();
   }
 
-  function openByTag(tag){
+  async function openByTag(tag){
     const q = normalize(tag);
     if(!q) return;
 
@@ -1335,6 +1587,44 @@
 
     const matches = findTemplatesByTag(q);
     if(matches.length === 0){
+      // Fallback: buscar en Firestore por código (TAG)
+      if(cloudReady()){
+        try{
+          const t = await cloudFindTemplateByCode(q);
+          if(t && t.data){
+            // añadir a memoria y reintentar
+            const layout = deepClone(t.data);
+            layout.header = (layout.header && typeof layout.header==='object') ? layout.header : {};
+            layout.theme = (layout.theme && typeof layout.theme==='object') ? layout.theme : {};
+            layout.fields = Array.isArray(layout.fields) ? layout.fields : [];
+            layout.header.logo = FIXED_LOGO_URL;
+
+            const tags = [];
+            const code = normalize(t.code || '');
+            if(code) tags.push(code);
+
+            const item = {
+              id: String(t.id),
+              category: normalize(t.category),
+              form: normalize(t.name),
+              tags,
+              baseData: deepClone(layout),
+              data: deepClone(layout)
+            };
+            db.push(item);
+            openTemplate(item);
+            lastOpenedTag = q;
+            saveState();
+            updateReadTagButtonText();
+            updateButtons();
+            updateStatus();
+            return;
+          }
+        }catch(e){
+          console.error(e);
+        }
+      }
+
       alert(`No se encontró ninguna plantilla con el TAG: ${q}`);
       return;
     }
@@ -1368,9 +1658,12 @@
     updateReadTagButtonText();
   }
 
-  function readTagAndOpen(){
+  async function readTagAndOpen(){
     if(db.length === 0){
-      alert('Primero importa uno o varios JSON.');
+      alert('No hay plantillas en memoria. Se cargarán desde Firestore si es posible.');
+      // intento rápido de carga
+      await loadTemplatesFromCloud();
+      if(db.length===0) return;
       return;
     }
 
@@ -1405,7 +1698,7 @@
       }
     }
 
-    openByTag(q);
+    await openByTag(q);
   }
 
   function importJsonFiles(){
@@ -1574,12 +1867,23 @@
   }
 
   (function init(){
+    initFirebase();
     const restored = loadState();
+    // cargar inspecciones desde la nube (no bloquea la UI)
     loadInspections();
 
     lastEditedISO = lastEditedISO || nowISO();
     updateLastEditedUI();
     applyFixedLogo();
+
+    // Cargar plantillas desde Firestore (fuente de verdad)
+    loadTemplatesFromCloud().then(()=>{
+      if(!currentId && db.length){
+        // no abre automáticamente; solo habilita acciones
+        updateStatus();
+        updateButtons();
+      }
+    });
 
     if(restored && db.length > 0){
       const item = getCurrentItem();
@@ -1608,6 +1912,27 @@
 
     saveState();
   })();
+
+// --- Bindings explícitos para botones inline (robustez) ---
+try{
+  window.importJsonFiles = importJsonFiles;
+  window.exportPDF = exportPDF;
+  window.exportAllInspectionsForDB = exportAllInspectionsForDB;
+  
+  // Override: en modo nube, no se importan plantillas por JSON local desde Inspector
+  window.importJsonFiles = function(){
+    alert('Modo nube: las plantillas se cargan automáticamente desde Firestore.\n\nUsa "Administrador" para crear/guardar plantillas.');
+  };
+
+  window.exportCloudInfoBBDD = exportCloudInfoBBDD;
+  window.saveCurrentInspection = saveCurrentInspection;
+  window.resetCurrentForm = resetCurrentForm;
+  window.clearLoaded = clearLoaded;
+  window.readTagAndOpen = readTagAndOpen;
+  window.addPhotosToField = addPhotosToField;
+  window.removePhotoFromField = removePhotoFromField;
+}catch(e){ console.error(e); }
+
 </script>
 
 </body>

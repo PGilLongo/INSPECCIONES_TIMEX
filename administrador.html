@@ -620,7 +620,188 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
+<!-- Firebase (Cloud Firestore) - compat (global firebase.*) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+
 <script>
+/* __GLOBAL_ERROR_WIRED__ */
+let __shownGlobalErr = false;
+function __showGlobalErr(prefix, err){
+  try{
+    console.error(prefix, err);
+    if(__shownGlobalErr) return;
+    __shownGlobalErr = true;
+    alert(prefix + ': ' + ((err && (err.message||err.code)) ? (err.code? (err.code+': '):'') + err.message : String(err)));
+  }catch(_){}
+}
+window.addEventListener('error', (e)=>__showGlobalErr('Error JS', e.error || e.message));
+window.addEventListener('unhandledrejection', (e)=>__showGlobalErr('Promesa rechazada', e.reason));
+
+  /* ===== Firebase (NO localStorage) =====
+     Guarda lo necesario en Cloud Firestore para no depender de exportar/importar en local. */
+  const firebaseConfig = {
+    apiKey: "AIzaSyBLP0yGc_Yh0nKGNYbPcYabTg25LDw2wco",
+    authDomain: "inspector-b4f41.firebaseapp.com",
+    projectId: "inspector-b4f41",
+    storageBucket: "inspector-b4f41.firebasestorage.app",
+    messagingSenderId: "333394046622",
+    appId: "1:333394046622:web:caa18c6f1d341b0a97158f"
+  };
+
+  let firebaseApp = null;
+  let db = null;
+
+  const TPL_COLLECTION = 'templates_v1';
+
+  function initFirebase(){
+    try{
+      if(!window.firebase){
+        console.warn('Firebase SDK no cargado.');
+        return false;
+      }
+
+
+/* __FS_HELPERS_GLOBAL__ */
+
+  // ===== Helpers Firestore (errores) =====
+  function fsErrShort(e){
+    try{
+      const code = e && (e.code || e.name) ? String(e.code || e.name) : '';
+      const msg = e && e.message ? String(e.message) : String(e||'');
+      const out = (code && msg) ? (code + ' — ' + msg) : (code || msg);
+      return out.trim() || 'error';
+    }catch(_){ return 'error'; }
+  }
+  function fsRulesHint(e){
+    const s = (e && (e.code || '') ? String(e.code) : '') + ' ' + (e && e.message ? String(e.message) : '');
+    if(/permission-denied/i.test(s)){
+      return "\n\nPermisos Firestore: abre Rules temporalmente o añade Auth (sin login, por defecto bloquea).";
+    }
+    if(/failed-precondition/i.test(s) && /index/i.test(s)){
+      return "\n\nFalta un índice compuesto (Firestore -> Indexes).";
+    }
+    if(/unavailable|network|offline|fetch/i.test(s)){
+      return "\n\nProblema de red/bloqueo del navegador.";
+    }
+    return "";
+  }
+
+  function fsErrShort(e){
+    try{
+      const code = e && (e.code || e.name) ? String(e.code || e.name) : '';
+      const msg = e && e.message ? String(e.message) : String(e||'');
+      const out = (code && msg) ? (code + ' — ' + msg) : (code || msg);
+      return out.trim() || 'error';
+    }catch(_){ return 'error'; }
+  }
+  function fsRulesHint(e){
+    const s = (e && (e.code || '') ? String(e.code) : '') + ' ' + (e && e.message ? String(e.message) : '');
+    if(/permission-denied/i.test(s)){
+      return "\n\nParece un problema de REGLAS: si no usas login, Firestore debe permitir lecturas/escrituras públicas (o habilitar Auth).";
+    }
+    if(/failed-precondition/i.test(s) && /index/i.test(s)){
+      return "\n\nParece faltar un índice compuesto en Firestore (consola -> Firestore -> Indexes).";
+    }
+    if(/unavailable|network|offline|fetch/i.test(s)){
+      return "\n\nParece un problema de conexión/red o bloqueo del navegador.";
+    }
+    return "";
+  }
+
+      firebaseApp = firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      return true;
+    }catch(e){
+      console.error(e);
+      return false;
+    }
+  }
+
+  function cloudReady(){
+    return !!db;
+  }
+
+  async function cloudPing(){
+    if(!cloudReady()) throw new Error('Firestore no está inicializado.');
+    // lectura ligera para comprobar conectividad
+    try{
+      await db.collection(TPL_COLLECTION).limit(1).get();
+    }catch(e){
+      throw e;
+    }
+  }
+
+  async function cloudFetchAllTemplates(){
+    if(!cloudReady()) return [];
+    const snap = await db.collection(TPL_COLLECTION).get();
+    const arr = [];
+    snap.forEach(doc=>{
+      const data = doc.data() || {};
+      arr.push({
+        id: doc.id,
+        name: String(data.name || ''),
+        category: String(data.category || ''),
+        code: String(data.code || ''),
+        createdAt: data.createdAt ? String(data.createdAt) : '',
+        updatedAt: data.updatedAt ? String(data.updatedAt) : '',
+        data: (data.data && typeof data.data === 'object') ? data.data : null
+      });
+    });
+    return arr.filter(t => t.id && t.name && t.category && t.data);
+  }
+
+  async function cloudUpsertTemplate(tpl){
+    if(!cloudReady()) throw new Error('Firestore no está inicializado.');
+    if(!tpl || !tpl.id) throw new Error('Plantilla inválida.');
+    const payload = {
+      name: String(tpl.name || ''),
+      category: String(tpl.category || ''),
+      code: String(tpl.code || ''),
+      createdAt: tpl.createdAt ? String(tpl.createdAt) : nowISO(),
+      updatedAt: tpl.updatedAt ? String(tpl.updatedAt) : nowISO(),
+      data: (tpl.data && typeof tpl.data === 'object') ? tpl.data : null
+    };
+    await db.collection(TPL_COLLECTION).doc(String(tpl.id)).set(payload, { merge:true });
+  }
+
+  async function cloudDeleteTemplate(id){
+    if(!cloudReady()) throw new Error('Firestore no está inicializado.');
+    if(!id) return;
+    await db.collection(TPL_COLLECTION).doc(String(id)).delete();
+  }
+
+  async function cloudDeleteAllTemplates(){
+    if(!cloudReady()) throw new Error('Firestore no está inicializado.');
+    const snap = await db.collection(TPL_COLLECTION).get();
+    const batch = db.batch();
+    let count = 0;
+    snap.forEach(doc=>{
+      batch.delete(doc.ref);
+      count++;
+    });
+    if(count) await batch.commit();
+  }
+
+  async function cloudFindByCode(code){
+    if(!cloudReady()) return null;
+    const c = normalizeCode(code);
+    if(!c) return null;
+    const qs = await db.collection(TPL_COLLECTION).where('code','==',c).limit(1).get();
+    if(qs.empty) return null;
+    const d = qs.docs[0];
+    const data = d.data() || {};
+    return {
+      id: d.id,
+      name: String(data.name || ''),
+      category: String(data.category || ''),
+      code: String(data.code || ''),
+      createdAt: data.createdAt ? String(data.createdAt) : '',
+      updatedAt: data.updatedAt ? String(data.updatedAt) : '',
+      data: (data.data && typeof data.data === 'object') ? data.data : null
+    };
+  }
+
   /* ===== LOGO FIJO (SIEMPRE ESTE) ===== */
   const FIXED_LOGO_URL = 'https://i.ibb.co/BK6jvxPG/image.png';
 
@@ -700,6 +881,13 @@
   function normalizeCategory(cat){ return String(cat || '').trim(); }
   function normalizeName(name){ return String(name || '').trim(); }
 
+  function showCloudError(err){
+    const name = (err && err.name) ? err.name : '';
+    const msg = (err && err.message) ? err.message : String(err || '');
+    alert('Error guardando/leyendo en la nube (Firestore).\n\n' + (name ? (name + ': ') : '') + msg);
+    console.error(err);
+  }
+
   /* ===== TAG / NFC ===== */
   let tagReadMode = null; // 'save' | 'goto' | null
 
@@ -753,7 +941,7 @@
       }
     }, { passive:true });
 
-  cap.addEventListener('touchstart', (e)=>{
+    cap.addEventListener('touchstart', (e)=>{
       const el = e.target;
       if(isEditableField(el)) focusIfEditable(el);
     }, { passive:true });
@@ -832,7 +1020,7 @@
         setTagStatus('<b>NFC:</b> error de lectura. Prueba otra vez.');
       };
 
-      ndefReader.onreading = (event) => {
+      ndefReader.onreading = async (event) => {
         let code = '';
 
         if(event.serialNumber) code = normalizeCode(event.serialNumber);
@@ -863,7 +1051,7 @@
             setTagStatus(`<b>NFC leído:</b> ${escapeHTML(code)}<br>→ se usará como código al guardar/actualizar plantilla.`);
           }else{
             setTagStatus(`<b>NFC leído:</b> ${escapeHTML(code)}`);
-            const t = tplByCode(code);
+            const t = await tplByCode(code);
             if(t) gotoByCode(code);
           }
         }else{
@@ -915,31 +1103,48 @@
     startWebNfcScan();
   }
 
-  /* ===== persistent templates (localStorage) ===== */
-  const TPL_STORAGE_KEY = 'formu_templates_v1';
+  /* ===== persistent templates (Firestore) ===== */
+  let templatesCache = [];
   let currentTemplateId = null;
 
-  function readTemplates(){
-    const raw = localStorage.getItem(TPL_STORAGE_KEY);
-    if(!raw) return [];
-    try{
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    }catch(e){
-      return [];
+  async function loadTemplatesCache(){
+    if(!cloudReady()){
+      templatesCache = [];
+      return;
     }
+    const arr = await cloudFetchAllTemplates();
+    templatesCache = arr;
   }
-  function writeTemplates(arr){
-    localStorage.setItem(TPL_STORAGE_KEY, JSON.stringify(arr));
+
+  function readTemplates(){
+    return Array.isArray(templatesCache) ? templatesCache : [];
   }
+
   function tplById(id){
     return readTemplates().find(t => t.id === id) || null;
   }
-  function tplByCode(code){
+
+  async function tplByCode(code){
     const c = normalizeCode(code);
     if(!c) return null;
-    return readTemplates().find(t => normalizeCode(t.code) === c) || null;
+    // primero cache, luego cloud (por si hay desfase)
+    const local = readTemplates().find(t => normalizeCode(t.code) === c) || null;
+    if(local) return local;
+    try{
+      const t = await cloudFindByCode(c);
+      if(t){
+        // refrescar cache suave
+        const idx = templatesCache.findIndex(x => x.id === t.id);
+        if(idx >= 0) templatesCache[idx] = t;
+        else templatesCache.push(t);
+      }
+      return t;
+    }catch(e){
+      console.error(e);
+      return null;
+    }
   }
+
   function listCategories(templates){
     const set = new Set();
     templates.forEach(t=>{
@@ -1053,12 +1258,12 @@
     btnDel.disabled = false;
   }
 
-  function onCategoryChange(){
+  async function onCategoryChange(){
     currentTemplateId = null;
     refreshTemplateUI(true);
   }
 
-  function onTemplateChange(){
+  async function onTemplateChange(){
     const id = document.getElementById('tplForm').value || '';
     if(!id){
       currentTemplateId = null;
@@ -1083,12 +1288,15 @@
     updateTemplateMeta();
   }
 
-  function gotoByCode(code){
+  async function gotoByCode(code){
     const c = normalizeCode(code);
     if(!c){ alert('Código vacío.'); return; }
 
-    const t = tplByCode(c);
-    if(!t){ alert('No se ha encontrado ningún formulario con ese código.'); return; }
+    let t = await tplByCode(c);
+    if(!t){
+      alert('No se ha encontrado ningún formulario con ese código.');
+      return;
+    }
 
     loadLayoutFromData(t.data);
     currentTemplateId = t.id;
@@ -1106,7 +1314,7 @@
     updateTemplateMeta();
   }
 
-  function saveTemplateCore({name, category, code}){
+  async function saveTemplateCore({name, category, code}){
     const data = serialize();
     const templates = readTemplates();
 
@@ -1119,7 +1327,13 @@
       existing.updatedAt = nowISO();
       if(code) existing.code = code;
 
-      writeTemplates(templates);
+      try{
+        await cloudUpsertTemplate(existing);
+        await loadTemplatesCache();
+      }catch(e){
+        showCloudError(e);
+        return;
+      }
 
       currentTemplateId = existing.id;
       document.getElementById('tplCategory').value = existing.category;
@@ -1138,8 +1352,14 @@
       updatedAt: nowISO(),
       data
     };
-    templates.push(tpl);
-    writeTemplates(templates);
+
+    try{
+      await cloudUpsertTemplate(tpl);
+      await loadTemplatesCache();
+    }catch(e){
+      showCloudError(e);
+      return;
+    }
 
     currentTemplateId = tpl.id;
     document.getElementById('tplCategory').value = tpl.category;
@@ -1148,7 +1368,12 @@
     updateTemplateMeta();
   }
 
-  function saveTemplatePrompt(){
+  async function saveTemplatePrompt(){
+    if(!cloudReady()){
+      alert('Firestore no está disponible.\n\nRevisa que el SDK se haya cargado y que tengas Firestore habilitado en el proyecto.\n(También revisa las reglas de seguridad).');
+      return;
+    }
+
     const name = normalizeName(prompt('Nombre del formulario (plantilla):', ''));
     if(!name) return;
 
@@ -1162,16 +1387,15 @@
       if(tagInp) tagInp.value = code;
     }
 
-    saveTemplateCore({name, category, code});
+    await saveTemplateCore({name, category, code});
   }
 
-  function updateCurrentTemplate(){
+  async function updateCurrentTemplate(){
     if(!currentTemplateId){
       alert('No hay plantilla cargada para actualizar.');
       return;
     }
-    const templates = readTemplates();
-    const t = templates.find(x=>x.id===currentTemplateId);
+    const t = tplById(currentTemplateId);
     if(!t){
       alert('Plantilla no encontrada.');
       currentTemplateId = null;
@@ -1187,7 +1411,13 @@
     const tagCode = normalizeCode(document.getElementById('tagInput')?.value || '');
     if(tagCode) t.code = tagCode;
 
-    writeTemplates(templates);
+    try{
+      await cloudUpsertTemplate(t);
+      await loadTemplatesCache();
+    }catch(e){
+      showCloudError(e);
+      return;
+    }
 
     document.getElementById('tplCategory').value = t.category;
     refreshTemplateUI(true);
@@ -1195,7 +1425,7 @@
     updateTemplateMeta();
   }
 
-  function deleteCurrentTemplate(){
+  async function deleteCurrentTemplate(){
     if(!currentTemplateId){
       alert('No hay plantilla cargada para borrar.');
       return;
@@ -1209,8 +1439,13 @@
     const ok = confirm(`¿Borrar esta plantilla?\n${t.category} / ${t.name}\n\nEsta acción no se puede deshacer.`);
     if(!ok) return;
 
-    const templates = readTemplates().filter(x=>x.id!==currentTemplateId);
-    writeTemplates(templates);
+    try{
+      await cloudDeleteTemplate(currentTemplateId);
+      await loadTemplatesCache();
+    }catch(e){
+      showCloudError(e);
+      return;
+    }
 
     currentTemplateId = null;
     refreshTemplateUI(false);
@@ -1218,7 +1453,12 @@
     refreshTemplateUI(true);
   }
 
-  function duplicateCurrentToNewTemplate(){
+  async function duplicateCurrentToNewTemplate(){
+    if(!cloudReady()){
+      alert('Firestore no está disponible.\n\nRevisa que el SDK se haya cargado y que tengas Firestore habilitado en el proyecto.\n(También revisa las reglas de seguridad).');
+      return;
+    }
+
     const name = normalizeName(prompt('Nombre de la nueva plantilla (duplicado):', ''));
     if(!name) return;
 
@@ -1244,7 +1484,13 @@
       existing.updatedAt = nowISO();
       if(code) existing.code = code;
 
-      writeTemplates(templates);
+      try{
+        await cloudUpsertTemplate(existing);
+        await loadTemplatesCache();
+      }catch(e){
+        showCloudError(e);
+        return;
+      }
 
       currentTemplateId = existing.id;
       document.getElementById('tplCategory').value = existing.category;
@@ -1255,8 +1501,14 @@
     }
 
     const tpl = { id: genId(), name, category, code: code || '', createdAt: nowISO(), updatedAt: nowISO(), data };
-    templates.push(tpl);
-    writeTemplates(templates);
+
+    try{
+      await cloudUpsertTemplate(tpl);
+      await loadTemplatesCache();
+    }catch(e){
+      showCloudError(e);
+      return;
+    }
 
     currentTemplateId = tpl.id;
     document.getElementById('tplCategory').value = tpl.category;
@@ -1571,7 +1823,7 @@
     inp.click();
   }
 
-  function clearLayout(){
+  async function clearLayout(){
     const ok = confirm(
       '⚠️ REINICIO COMPLETO\n\n' +
       'Esto dejará la página como si fuese la primera vez que se abre:\n' +
@@ -1588,8 +1840,19 @@
     stopWebNfcScan();
     tagReadMode = null;
 
-    // Borrar plantillas persistentes (como primera vez)
-    try{ localStorage.removeItem(TPL_STORAGE_KEY); }catch(e){}
+    // Borrar plantillas persistentes (Firestore)
+    if(cloudReady()){
+      try{
+        await cloudDeleteAllTemplates();
+        await loadTemplatesCache();
+      }catch(e){
+        showCloudError(e);
+        // Continuar con el resto igualmente
+        templatesCache = [];
+      }
+    }else{
+      templatesCache = [];
+    }
 
     currentTemplateId = null;
 
@@ -1760,26 +2023,42 @@
 
     // NUEVO FORMATO: incluye plantillas + layout + estado
     if((data.format === EXPORT_FORMAT) && data.layout && typeof data.layout === 'object'){
+      // En esta versión, el JSON puede incluir plantillas como backup/transferencia,
+      // pero la persistencia principal es Firestore. Se permite importar si el usuario quiere.
       const incomingTemplates = safeTemplatesForExport(data.templates || []);
-      const existingTemplates = readTemplates();
 
-      if(incomingTemplates.length){
+      // Si hay plantillas en el JSON y Firestore está listo, preguntar si importarlas al cloud
+      if(incomingTemplates.length && cloudReady()){
         let shouldReplace = true;
-        if(existingTemplates.length){
+        if(readTemplates().length){
           shouldReplace = confirm(
             'Este JSON incluye PLANTILLAS.\n\n' +
-            '¿Quieres importar y REEMPLAZAR las plantillas actuales por las del archivo?\n\n' +
-            'Aceptar = reemplazar plantillas.\nCancelar = mantener las plantillas actuales.'
+            '¿Quieres importar y REEMPLAZAR las plantillas actuales en la nube por las del archivo?\n\n' +
+            'Aceptar = reemplazar (en Firestore).\nCancelar = mantener las actuales.'
           );
         }
         if(shouldReplace){
-          writeTemplates(incomingTemplates);
+          (async ()=>{
+            try{
+              await cloudDeleteAllTemplates();
+              // escribir una a una
+              for(const t of incomingTemplates){
+                await cloudUpsertTemplate(t);
+              }
+              await loadTemplatesCache();
+              refreshTemplateUI(false);
+            }catch(e){
+              showCloudError(e);
+            }
+          })();
         }
+      }else if(incomingTemplates.length && !cloudReady()){
+        // si no hay cloud, solo usarlo como "vista" (no persistente)
+        templatesCache = incomingTemplates;
+        refreshTemplateUI(false);
       }
 
-      refreshTemplateUI(false);
       currentTemplateId = null;
-
       loadLayoutCore(data.layout);
 
       if(data.uiState) applyImportUiState(data.uiState);
@@ -1939,7 +2218,7 @@
   });
 
   /* ===== TAG input behavior (Enter) ===== */
-  document.addEventListener('keydown', (e)=>{
+  document.addEventListener('keydown', async (e)=>{
     const inp = document.getElementById('tagInput');
     if(!inp) return;
     if(e.target !== inp) return;
@@ -1954,22 +2233,54 @@
       }else if(tagReadMode === 'save'){
         setTagStatus(`<b>Código:</b> ${escapeHTML(code)} (se usará como sugerencia al guardar)`);
       }else{
-        const t = tplByCode(code);
+        const t = await tplByCode(code);
         if(t) gotoByCode(code);
       }
     }
   });
 
   /* ===== init ===== */
-  lastEditedISO = nowISO();
-  updateLastEditedUI();
-  applyFixedLogo();
-  snapshotInitialState();
-  applyHeaderText();
-  refreshAutoGrow();
-  refreshTemplateUI(false);
-  setTagStatus('');
-  setupAutoFocusForNfc();
+  (async ()=>{
+    lastEditedISO = nowISO();
+    updateLastEditedUI();
+    applyFixedLogo();
+    snapshotInitialState();
+    applyHeaderText();
+    refreshAutoGrow();
+    setTagStatus('');
+    setupAutoFocusForNfc();
+
+    const ok = initFirebase();
+    if(ok){
+      try{
+        await cloudPing();
+        await loadTemplatesCache();
+        refreshTemplateUI(false);
+        setTagStatus('<b>Nube:</b> conectada (Firestore).');
+      }catch(e){
+        templatesCache = [];
+        refreshTemplateUI(false);
+        setTagStatus('<b>Nube:</b> sin conexión o sin permisos (Firestore). Se puede seguir editando, pero no se podrán guardar/cargar plantillas.');
+        console.error(e);
+      }
+    }else{
+      templatesCache = [];
+      refreshTemplateUI(false);
+      setTagStatus('<b>Nube:</b> Firebase no inicializado. Revisa scripts/config.');
+    }
+  })();
+
+// --- Bindings explícitos para botones inline (robustez) ---
+try{
+  window.saveTemplate = saveTemplate;
+  window.loadTemplate = loadTemplate;
+  window.deleteTemplate = deleteTemplate;
+  window.deleteAllTemplates = deleteAllTemplates;
+  window.findByCode = findByCode;
+  window.importJsonFiles = importJsonFiles;
+  window.exportJSON = exportJSON;
+}catch(e){ console.error(e); }
+
 </script>
 </body>
 </html>
